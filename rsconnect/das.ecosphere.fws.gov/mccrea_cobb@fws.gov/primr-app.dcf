@@ -1,0 +1,13 @@
+name: primr-app
+title: primr-app
+username: mccrea_cobb@fws.gov
+account: mccrea_cobb@fws.gov
+server: das.ecosphere.fws.gov
+hostUrl: https://das.ecosphere.fws.gov/__api__
+appId: 40
+bundleId: 175
+url: https://das.ecosphere.fws.gov/content/40/
+when: 1631312121.41323
+lastSyncTime: 1631312121.41323
+asMultiple: FALSE
+asStatic: FALSE

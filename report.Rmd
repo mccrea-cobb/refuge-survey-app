@@ -1,0 +1,32 @@
+
+# Refuge Survey Report
+
+This is a test. Here's a report.
+
+```{r table, echo=FALSE, message=FALSE, warning=FALSE, fig.cap= "Survey protocols for Refuges in Alaska."}
+library(flextable)
+
+dat() %>%
+  dplyr::select(ProtocolTitle,
+                StationName,
+                SurveyName) %>%
+  dplyr::filter(ProtocolTitle != "NA") %>%
+  dplyr::arrange(ProtocolTitle, StationName, SurveyName) %>%
+  as_grouped_data(groups = c("ProtocolTitle")) %>%
+  flextable::flextable() %>%
+  set_header_labels(ProtocolTitle = "Protocol",
+                    StationName = "Refuge",
+                    SurveyName = "Survey") %>%
+  width(j = ~StationName, width = 1) %>%
+  width(j = ~ProtocolTitle, width = 3) %>%
+  width(j = ~SurveyName, width = 3)
+
+# FitFlextableToPage <- function(ft, pgwidth = 6){
+#   ft_out <- ft %>% autofit()
+#   ft_out <- width(ft_out, width = dim(ft_out)$widths*pgwidth /(flextable_dim(ft_out)$widths))
+#   return(ft_out)
+# }
+# 
+# FitFlextableToPage(tbl_protocols)
+
+```
