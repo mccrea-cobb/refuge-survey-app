@@ -1,32 +1,107 @@
+---
+title: "Refuge Survey Report"
+params:
+  input_dat: NA
+  dat: NA
+  zone: NA
+---
 
-# Refuge Survey Report
 
-This is a test. Here's a report.
+## `r unique(dat()$RegionName)` Region
+## `r Sys.Date()`
+## Zone: `r input$zone_select`
+## Selected suveys? `r input$selected_select`
+## Survey titles that contain `r input$search`
+## 
 
-```{r table, echo=FALSE, message=FALSE, warning=FALSE, fig.cap= "Survey protocols for Refuges in Alaska."}
+### Regional Summary
+
+#### Current Surveys: `r input_dat %>% filter(SurveyStatus == "Current") %>% nrow()`
+
+#### Surveys with Protocols: `r input_dat %>% filter(HasProtocol == "Has Protocol") %>% nrow()` (`r round((input_dat %>% filter(HasProtocol != "Has Protocol") %>% nrow()) / (input_dat %>% filter(SurveyStatus == "Current") %>% nrow()), digits = 0)`%)
+
+#### Inventory Surveys: `r input_dat %>% filter(SurveyTypeShort == "Inventory") %>% nrow()`
+
+#### Monitoring Surveys: `r input_dat %>% filter(SurveyTypeShort == "Monitoring") %>% nrow()`
+
+#### Research: `r input_dat %>% filter(SurveyTypeShort == "Research") %>% nrow()`
+
+
+Here are some summaries based on the criteria that you selected in the Refuge Survey App. 
+
+```{r user_inputs, echo=FALSE, message=FALSE}
+dat_inputs <- data.frame(Zone = input$zone_select,
+                         Selected = input$selected_select)
+flextable::flextable(dat_inputs)
+```
+
+
+Zone: `r input$zone_select`
+
+
+```{r tbl_DT, echo=FALSE, message=FALSE, warning=FALSE}
+# library(DT)
+# dat() %>%
+#   dplyr::select(ProtocolTitle,
+#                 StationName,
+#                 SurveyName) %>%
+#   dplyr::filter(ProtocolTitle != "NA") %>%
+#   dplyr::arrange(ProtocolTitle, StationName, SurveyName) %>%
+#   DT::datatable(caption = "Survey protocols for refuge surveys",
+#                 colnames = c("Protocol",
+#                              "Refuge",
+#                              "Survey")
+#   )
+```
+
+
+```{r tbl_protocols, echo=FALSE, message=FALSE, warning=FALSE, results='asis'}
 library(flextable)
+#set_flextable_defaults(fonts_ignore=TRUE)
 
+if (nrow(dat()[dat()$ProtocolTitle == "NA", ]) == nrow(dat())) {
+  print("No protocols to display within your search criteria.")
+} else {
+  dat() %>%
+    dplyr::select(ProtocolTitle,
+                  StationName,
+                  SurveyName) %>%
+    dplyr::filter(ProtocolTitle != "NA") %>%
+    dplyr::arrange(ProtocolTitle, StationName, SurveyName) %>%
+    flextable::as_grouped_data(groups = c("ProtocolTitle")) %>%
+    flextable::flextable() %>%
+    set_header_labels(ProtocolTitle = "Protocol",
+                      StationName = "Refuge",
+                      SurveyName = "Survey") %>%
+    width(j = ~ProtocolTitle, width = 3) %>%
+    width(j = ~StationName, width = 1) %>%
+    width(j = ~SurveyName, width = 3) %>%
+    set_caption(paste("Survey protocols for Refuges in the", unique(dat()$RegionName), "Region."))
+} 
+```
+
+\newpage
+
+
+gfsdg dfg dfg yh5tsegas hyte hsdhg sdfh.
+
+```{r tbl_surveys, echo=FALSE, message=FALSE, warning=FALSE, fig.cap= "Refuge surveys in Alaska."}
+set_flextable_defaults(fonts_ignore=TRUE)
 dat() %>%
-  dplyr::select(ProtocolTitle,
-                StationName,
-                SurveyName) %>%
-  dplyr::filter(ProtocolTitle != "NA") %>%
-  dplyr::arrange(ProtocolTitle, StationName, SurveyName) %>%
-  as_grouped_data(groups = c("ProtocolTitle")) %>%
+  dplyr::select(StationName, SurveyName, SurveyStatus, Selected) %>%
+  dplyr::arrange(StationName, SurveyName, SurveyStatus, Selected) %>%
+  flextable::as_grouped_data(groups = c("StationName")) %>%
   flextable::flextable() %>%
-  set_header_labels(ProtocolTitle = "Protocol",
-                    StationName = "Refuge",
-                    SurveyName = "Survey") %>%
+  flextable::set_header_labels(StationName = "Refuge",
+                    SurveyName = "Survey",
+                    SurveyStatus = "Status",
+                    Selected = "Selected?") %>%
+  flextable::autofit() %>%
   width(j = ~StationName, width = 1) %>%
-  width(j = ~ProtocolTitle, width = 3) %>%
-  width(j = ~SurveyName, width = 3)
-
-# FitFlextableToPage <- function(ft, pgwidth = 6){
-#   ft_out <- ft %>% autofit()
-#   ft_out <- width(ft_out, width = dim(ft_out)$widths*pgwidth /(flextable_dim(ft_out)$widths))
-#   return(ft_out)
-# }
-# 
-# FitFlextableToPage(tbl_protocols)
+  width(j = ~SurveyName, width = 2.75) %>%
+  width(j = ~SurveyStatus, width = 2.75) %>%
+  width(j = ~Selected, width = 0.5) %>%
+  set_caption(paste("Refuge surveys in the", unique(dat()$RegionName), "Region."))
 
 ```
+

@@ -47,12 +47,15 @@ library(iris)
 # input_dat <- dplyr::full_join(primr_dat, loc_dat,
 #                               by = "StationCostCenterCode") %>%
 #   dplyr::filter(!is.na(StationName)) %>% # Removes rows containing no survey data (NAs)
-#   dplyr::mutate(StationName = as.factor(stringr::str_remove(StationName,
-#                                                   pattern = " National Wildlife Refuge")))
+# dplyr::mutate(StationName = stringr::str_remove(StationName,
+#                                                 pattern = " National Wildlife Refuge"))
+#
+# # Add non-UTF-8 encoding characters in SurveyName https://stackoverflow.com/questions/17291287/how-to-identify-delete-non-utf-8-characters-in-r
+# Encoding(input_dat$SurveyName) <- "UTF-8"
+# input_dat$SurveyName <- iconv(input_dat$SurveyName, "UTF-8", "UTF-8",sub='') ## replace any non UTF-8 by ''
 
-
-  # Load the survey data locally
-  load("./data/dat.Rdata")
+# Load the survey data locally
+load("./data/dat.Rdata")
 
 
 #-----
@@ -102,20 +105,19 @@ ui <- function(request) {
                                          inline = FALSE,
                                          params = list(
                                            #Zone = list(inputId = "Zone", title = "Refuge Zone:"),
+                                           SurveyStatus = list(inputId = "SurveyStatus", title = "Survey Status:"),
                                            StationName = list(inputId = "StationName", title = "Refuge:"),
                                            SurveyTypeShort = list(inputId = "SurveyTypeShort", title = "Survey Type:"),
                                            Coop = list(inputId = "Coop", title = "Cooperative Survey:"),
-                                           SurveyStatus = list(inputId = "SurveyStatus", title = "Survey Status:"),
                                            # Selected = list(inputId = "Selected", title = "Selected Survey:"),
                                            ResourceThemeLevel2 = list(inputId = "ResourceThemeLevel2", title = "Resource Theme:")
                                          )
                                        ),
 
-                                       radioButtons('format', 'Document format', c('PDF', 'HTML', 'Word'),
-                                                    inline = TRUE),
-                                       downloadButton('downloadReport')
+                                       hr(),
 
-                                       #tags$h4("Hover over the plot for more details"),
+                                       tags$h4("Download a summary report"),
+                                       downloadButton('downloadReport')
                                 ),
                                 column(10,
                                        tabsetPanel(
@@ -150,7 +152,7 @@ ui <- function(request) {
 server <- function(input, output, session) {
 
   dat_zone <- reactive({
-    if(is.null(input$zone_select) & is.null(input$selected_select)) {
+    if (is.null(input$zone_select) & is.null(input$selected_select)) {
       input_dat
     } else if(is.null(input$selected_select)) {
       subset(input_dat, Zone %in% input$zone_select)
@@ -160,11 +162,23 @@ server <- function(input, output, session) {
                                 Selected == input$selected_select)
   })
 
+  search <- reactive({
+    if (is.null(input$search)) {
+      search <- NULL
+    } else {
+      search <- input$search %>%
+        str_split(pattern = " ") %>%
+        unlist() %>%
+        paste(collapse = "|")
+    }
+  })
+
   dat_search <- reactive({
-    if(!is.null(input$search)) {
+    if (is.null(search())) {
+      dat_zone()
+    } else
       dat_zone() %>%
-        filter(stringr::str_detect(SurveyName, input$search))
-    } else dat_zone()
+      filter(stringr::str_detect(tolower(SurveyName), search()))
   })
 
   # Create a responsive dataset (dat()) based on user inputs in SelectizeGroupUI
@@ -350,29 +364,30 @@ server <- function(input, output, session) {
     )
   })
 
+  # Set up parameters to pass to Rmd report
+  params <- list(input_dat = input_dat,
+                 dat = reactive(dat()),
+                 zone = reactive(input$zone_select))
+
   # Download rmarkdown report
   output$downloadReport <- downloadHandler(
-    filename = function() {
-      paste('my-report', sep = '.', switch(
-        input$format, PDF = 'pdf', HTML = 'html', Word = 'docx'
-      ))
-    },
+    filename = "refuge-report.html",
 
     content = function(file) {
       src <- normalizePath('report.Rmd')
 
-      # temporarily switch to the temp dir, in case you do not have write
+      # Temporarily switch to the temp dir, in case you do not have write
       # permission to the current working directory
       owd <- setwd(tempdir())
       on.exit(setwd(owd))
       file.copy(src, 'report.Rmd', overwrite = TRUE)
 
       library(rmarkdown)
-      out <- rmarkdown::render('report.Rmd', switch(
-        input$format,
-        PDF = pdf_document(), HTML = html_document(), Word = word_document()
-      ),
-      params = list(data = reactive(dat())))
+      out <- rmarkdown::render('report.Rmd',
+                               html_document(),
+                               params = params,
+                               # envir = new.env(parent = globalenv())
+      )
       file.rename(out, file)
     }
   )
