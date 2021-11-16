@@ -31,7 +31,7 @@ library(iris)
 #                                                           "Coop Inventory"),
 #                                             Research = c("Research",
 #                                                          "Coop Research")),
-#     Zone = if_else(str_detect(StationName, "Arctic|Flats|Koyukuk|Nowitna|Selawik|Tetlin|Kanuti"), "North", "South"),
+#     Zone = if_else(str_detect(StationName, "Arctic|Flats|Koyukuk|Nowitna|Innoko|Selawik|Tetlin|Kanuti|Kenai"), "North", "South"),
 #     Coop = if_else(str_detect(SurveyType, "Coop"), "Cooperative", "Not Cooperative")
 #   )
 #
@@ -53,6 +53,9 @@ library(iris)
 # # Add non-UTF-8 encoding characters in SurveyName https://stackoverflow.com/questions/17291287/how-to-identify-delete-non-utf-8-characters-in-r
 # Encoding(input_dat$SurveyName) <- "UTF-8"
 # input_dat$SurveyName <- iconv(input_dat$SurveyName, "UTF-8", "UTF-8",sub='') ## replace any non UTF-8 by ''
+#
+# # Save it
+# save(input_dat, file = "./data/dat.Rdata")
 
 # Load the survey data locally
 load("./data/dat.Rdata")
@@ -67,18 +70,16 @@ ui <- function(request) {
                      tabPanel("Home",
                               fluidRow(
                                 column(2,
-                                       img(src = "aim_logo_small.png", width = 150),
+                                       fluidRow(
+                                         column(6,
+                                                img(src = "aim_logo_small.png", width = 90),
+                                         ),
+                                         column(6,
+                                                htmlOutput("dat_panel")  # Add a header
+                                         )
+                                       ),
 
-                                       br(), br(),
-
-                                       # bookmarkButton(),
-
-                                       # actionButton("north", "Doug"),
-                                       # actionButton("south", "Ronnie"),
-
-                                       htmlOutput("dat_panel"),  # Add a header
-
-                                       br(),
+                                       hr(),
 
                                        shinyWidgets::searchInput(inputId = "search",
                                                                  label = "Search survey titles:",
@@ -104,13 +105,12 @@ ui <- function(request) {
                                          id = "my-filters",
                                          inline = FALSE,
                                          params = list(
-                                           #Zone = list(inputId = "Zone", title = "Refuge Zone:"),
                                            SurveyStatus = list(inputId = "SurveyStatus", title = "Survey Status:"),
                                            StationName = list(inputId = "StationName", title = "Refuge:"),
                                            SurveyTypeShort = list(inputId = "SurveyTypeShort", title = "Survey Type:"),
                                            Coop = list(inputId = "Coop", title = "Cooperative Survey:"),
-                                           # Selected = list(inputId = "Selected", title = "Selected Survey:"),
-                                           ResourceThemeLevel2 = list(inputId = "ResourceThemeLevel2", title = "Resource Theme:")
+                                           ResourceThemeLevel2 = list(inputId = "ResourceThemeLevel2", title = "Resource Theme:"),
+                                           Frequency = list(inputId = "Frequency", title = "Frequency:")
                                          )
                                        ),
 
@@ -123,20 +123,21 @@ ui <- function(request) {
                                        tabsetPanel(
                                          tabPanel("Map",
 
-                                                  #tags$h4("Click on a point for details on a refuge"),
                                                   leaflet::leafletOutput("map",
                                                                          height = 500),
 
                                                   plotly::plotlyOutput("plot")  # Show a bar plot
                                          ),
                                          tabPanel("Surveys",
-                                                  img(src='https://imgs.xkcd.com/comics/self_description.png', "https://xkcd.com/688/", align = "center"),
 
-                                                  br(), br(),
+                                                  br(),
 
                                                   DT::DTOutput("tbl_survey", height = 500)  # Show a summary table of surveys
                                          ),
                                          tabPanel("Protocols",
+
+                                                  br(),
+
                                                   DT::DTOutput("tbl_protocol", height = 500))  # Show a summary table of surveys)
                                        )
                                 )
@@ -193,47 +194,9 @@ server <- function(input, output, session) {
       "Coop",
       "SurveyStatus",
       "Selected",
-      "ResourceThemeLevel2")
+      "ResourceThemeLevel2",
+      "Frequency")
   )
-
-  # Create buttons for North and South Zone settings
-  # observeEvent(input$north, {
-  #   updateCheckboxGroupInput(
-  #     session,
-  #     inputId = "zone_select",
-  #     selected = "North"
-  #   )
-  #   updateSelectizeInput(
-  #     session,
-  #     inputId = "my-filters-SurveyStatus",
-  #     selected = c("Current", "Expected")
-  #   )
-  #   updateCheckboxGroupInput(
-  #     session,
-  #     inputId = "selected_select",
-  #     selected = "Yes"
-  #   )
-  # })
-  #
-  # observeEvent(input$south, {
-  #   updateCheckboxGroupInput(
-  #     session,
-  #     inputId = "zone_select",
-  #     selected = "South"
-  #   )
-  #
-  #   updateCheckboxGroupInput(
-  #     session,
-  #     inputId = "my-filters-Selected",
-  #     selected = "Yes"
-  #   )
-  #   updateSelectizeInput(
-  #     session,
-  #     inputId = "my-filters-SurveyStatus",
-  #     selected = c("Current", "Expected")
-  #   )
-  # })
-
 
   # Create a plotly plot
   output$plot <- plotly::renderPlotly({
@@ -322,8 +285,9 @@ server <- function(input, output, session) {
       dplyr::select(StationName,
                     SurveyName,
                     SurveyStatus,
+                    SurveyTypeShort,
                     Selected) %>%
-      arrange(StationName, SurveyName, SurveyStatus)
+      arrange(StationName, SurveyName)
   })
 
   # Create a summary dataset that reacts to user inputs for the protocol table
@@ -337,20 +301,52 @@ server <- function(input, output, session) {
   })
 
   # Render the survey table using DT
-  output$tbl_survey <- DT::renderDataTable(dat_survey_tbl(),
-                                           colnames = c("Refuge",
-                                                        "Survey Name",
-                                                        "Status",
-                                                        "Selected?"),
-                                           options = list(pageLength = 25)
-  )
+  output$tbl_survey <- DT::renderDT(server = FALSE, {
+    DT::datatable(
+      dat_survey_tbl(),
+      colnames = c("Refuge",
+                   "Survey Name",
+                   "Status",
+                   "Survey Type",
+                   "Selected?"),
+      rownames = FALSE,
+      extensions = c("RowGroup", "Buttons"),
+      options = list(pageLength = 25,
+                     dom = "Bfrtip",
+                     rowGroup = list(dataSrc = 0),
+                     columnDefs = list(list(visible = FALSE,
+                                            targets = 0)),
+                     buttons =
+                       list(
+                         list(
+                           extend = "print",
+                           buttons = "print",
+                           exportOptions = list(
+                             modifiers = list(page = "all")
+                           )
+                         ),
+                         list(
+                           extend = "excel",
+                           buttons = "excel",
+                           exportOptions = list(
+                             modifiers = list(page = "all")
+                           )
+                         )
+                       )
+      )
+    )
+  })
 
   # Render the protocol table using DT
   output$tbl_protocol <- DT::renderDataTable(dat_protocol_tbl(),
                                              colnames = c("Protocol",
                                                           "Refuge",
                                                           "Survey Name"),
-                                             options = list(pageLength = 25)
+                                             rownames = FALSE,
+                                             options = list(pageLength = 25,
+                                                            dom = "Bfrtip",
+                                                            buttons = c("print", "excel")
+                                                            )
   )
 
   # Create html code for the summary panel
@@ -385,7 +381,7 @@ server <- function(input, output, session) {
       library(rmarkdown)
       out <- rmarkdown::render('report.Rmd',
                                html_document(),
-                               params = params,
+                               params = params
                                # envir = new.env(parent = globalenv())
       )
       file.rename(out, file)
@@ -396,5 +392,5 @@ server <- function(input, output, session) {
 
 
 # Run the application
-shiny::shinyApp(ui = ui, server = server, enableBookmarking = "url")
+shiny::shinyApp(ui = ui, server = server)
 
