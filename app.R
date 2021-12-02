@@ -13,9 +13,10 @@ library(DT)
 library(RColorBrewer)
 library(tidyr)
 library(iris)
+library(kableExtra)
 
 ##----
-# # Load the data from the IRIS Warehouse
+# Load the data from the IRIS Warehouse
 # primr_dat <- iris::get_primr_iris(region = "11") %>%
 #   dplyr::na_if(9999) %>%
 #   dplyr::na_if(9998) %>%
@@ -31,8 +32,8 @@ library(iris)
 #                                                           "Coop Inventory"),
 #                                             Research = c("Research",
 #                                                          "Coop Research")),
-#     Zone = if_else(str_detect(StationName, "Arctic|Flats|Koyukuk|Nowitna|Innoko|Selawik|Tetlin|Kanuti|Kenai"), "North", "South"),
-#     Coop = if_else(str_detect(SurveyType, "Coop"), "Cooperative", "Not Cooperative")
+#     Zone = as.factor(if_else(str_detect(StationName, "Arctic|Flats|Koyukuk|Nowitna|Innoko|Selawik|Tetlin|Kanuti|Kenai"), "North", "South")),
+#     Coop = as.factor(if_else(str_detect(SurveyType, "Coop"), "Cooperative", "Not Cooperative"))
 #   )
 #
 # loc_dat <- query_iris("dbo", "DimOrganization") %>%
@@ -44,19 +45,65 @@ library(iris)
 #   dplyr::select(-RegionNumber) %>%
 #   dplyr::collect()
 #
-# input_dat <- dplyr::full_join(primr_dat, loc_dat,
+# input_dat_old <- dplyr::full_join(primr_dat, loc_dat,
 #                               by = "StationCostCenterCode") %>%
 #   dplyr::filter(!is.na(StationName)) %>% # Removes rows containing no survey data (NAs)
-# dplyr::mutate(StationName = stringr::str_remove(StationName,
-#                                                 pattern = " National Wildlife Refuge"))
+#   dplyr::mutate(StationName = as.factor(stringr::str_remove(StationName,
+#                                                   pattern = " National Wildlife Refuge")
+#                                         ),
+#                 Selected = as.factor(Selected),
+#                 SurveyStatus = as.factor(SurveyStatus))
 #
 # # Add non-UTF-8 encoding characters in SurveyName https://stackoverflow.com/questions/17291287/how-to-identify-delete-non-utf-8-characters-in-r
 # Encoding(input_dat$SurveyName) <- "UTF-8"
 # input_dat$SurveyName <- iconv(input_dat$SurveyName, "UTF-8", "UTF-8",sub='') ## replace any non UTF-8 by ''
+# #
+# # # Save it
+# # save(input_dat, file = "./data/dat.Rdata")
 #
-# # Save it
+# ##----
+# # Load the data using PRIMR web services (no VPN required)
+# library(iris)
+# library(tidyverse)
+#
+# input_dat <- get_primr(cost_code = "FF07%")
+# input_dat <- input_dat %>%
+#   dplyr::filter(!is.na(stationName)) %>% # Removes rows containing no survey data (NAs)
+#   rename(StationName = stationName,
+#          Selected = selected,
+#          SurveyStatus = status.name,
+#          SurveyName = name,
+#          SurveyType = type.name,
+#          Frequency = frequency.name,
+#          ResourceThemeLevel1 = resourceLevel1.name,
+#          ResourceThemeLevel2 = resourceLevel2.name,
+#          Conducted = conducted,
+#          ProtocolTitle = protocol.servCatTitle,
+#          Latitude = latitude,
+#          Longitude = longitude,
+#          HasProtocol = protocolUsed) %>%
+#   dplyr::mutate(StationName = as.factor(stringr::str_remove(StationName,
+#                                                             pattern = " National Wildlife Refuge")),
+#                 Selected = forcats::fct_recode(as.factor(Selected), "Yes" = "TRUE", "No" = "FALSE"),
+#                 SurveyStatus = as.factor(SurveyStatus),
+#                 SurveyTypeShort = forcats::fct_collapse(SurveyType,
+#                                           Monitoring = c("Baseline Monitoring",
+#                                                          "Coop Baseline Monitoring",
+#                                                          "Monitoring to Inform Management",
+#                                                          "Coop Monitoring to Inform Management"),
+#                                           Inventory = c("Inventory",
+#                                                         "Coop Inventory"),
+#                                           Research = c("Research",
+#                                                        "Coop Research")),
+#                 Zone = as.factor(if_else(str_detect(StationName, "Arctic|Flats|Koyukuk|Nowitna|Innoko|Selawik|Tetlin|Kanuti|Kenai"), "North", "South")),
+#                 Coop = as.factor(if_else(str_detect(SurveyType, "Coop"), "Cooperative", "Not Cooperative")),
+#                 HasProtocol = forcats::fct_recode(as.factor(HasProtocol), "Has Protocol" = "TRUE", "No Protocol" = "FALSE"),
+#                 ProtocolTitle = as.factor(na_if(ProtocolTitle, "NA")))
 # save(input_dat, file = "./data/dat.Rdata")
 
+
+
+##----
 # Load the survey data locally
 load("./data/dat.Rdata")
 
@@ -138,7 +185,13 @@ ui <- function(request) {
 
                                                   br(),
 
-                                                  DT::DTOutput("tbl_protocol", height = 500))  # Show a summary table of surveys)
+                                                  DT::DTOutput("tbl_protocol", height = 500)  # Show a summary table of protocols
+                                         ),
+                                         tabPanel("Annual Updates",
+
+                                                  br(),
+
+                                                  DT::DTOutput("tbl_conducted", height = 500))  # Show a summary table of protocols
                                        )
                                 )
                               )
@@ -151,7 +204,6 @@ ui <- function(request) {
 ##----
 # Define the server logic
 server <- function(input, output, session) {
-
   dat_zone <- reactive({
     if (is.null(input$zone_select) & is.null(input$selected_select)) {
       input_dat
@@ -198,6 +250,9 @@ server <- function(input, output, session) {
       "Frequency")
   )
 
+
+
+
   # Create a plotly plot
   output$plot <- plotly::renderPlotly({
     dat() %>%
@@ -214,6 +269,9 @@ server <- function(input, output, session) {
                      yaxis = list(title = "")
       )
   })
+
+
+
 
   # Create simplified map dataset to speed things up
   dat_surveys <- reactive({
@@ -242,8 +300,10 @@ server <- function(input, output, session) {
       select(!HasProtocol)
   })
   dat_map <- reactive({
-    full_join(dat_surveys(), dat_protocols(), by = "StationName")
+    left_join(dat_surveys(), dat_protocols(), by = "StationName")
   })
+
+
 
   ## Create a leaflet map
   # Define the color palette for the map
@@ -282,8 +342,13 @@ server <- function(input, output, session) {
   # Create a summary dataset that reacts to user inputs for the survey table
   dat_survey_tbl <- reactive({
     dat() %>%
+      unnest(reports, keep_empty = TRUE) %>%
+      distinct(surveyId, .keep_all = T) %>%
+      mutate(Products = paste0("<a href='", servCatUrl, "' target='_blank'>", "ServCat link", "</a>")) %>%
+      mutate(Products = na_if(Products, "<a href='NA' target='_blank'>ServCat link</a>")) %>%
       dplyr::select(StationName,
                     SurveyName,
+                    Products,
                     SurveyStatus,
                     SurveyTypeShort,
                     Selected) %>%
@@ -300,15 +365,43 @@ server <- function(input, output, session) {
       arrange(ProtocolTitle, StationName, SurveyName)
   })
 
+  # Create a summary dataset that reacts to user inputs for the annual update table
+  dat_conducted_tbl <- reactive({
+    dat_conducted <- unnest(dat(), Conducted, keep_empty = TRUE) %>%
+      mutate(year = as.numeric(year))
+
+    first_year <- min(dat_conducted$year, na.rm = T)
+    last_year <- max(dat_conducted$year, na.rm = T)
+
+    dat_conducted %>%
+      group_by(SurveyName, StationName) %>%
+      expand(year = first_year:last_year) %>%
+      ungroup() %>%
+      left_join(dat_conducted) %>%
+      select(SurveyName, StationName, year, isSurveyConducted, reason, comment) %>%
+      rename(Conducted = isSurveyConducted,
+             Reason = reason,
+             Comment = comment,
+             Year = year) %>%
+      mutate(Conducted = as.factor(Conducted),
+             Year  = as.integer(Year),
+             Reason = as.factor(Reason)) %>%
+      mutate(Conducted = forcats::fct_recode(Conducted, "No" = "false", "Yes" = "true"))
+  })
+
+
   # Render the survey table using DT
   output$tbl_survey <- DT::renderDT(server = FALSE, {
     DT::datatable(
       dat_survey_tbl(),
+      escape = F,
       colnames = c("Refuge",
                    "Survey Name",
+                   "Products",
                    "Status",
                    "Survey Type",
                    "Selected?"),
+      filter = "top",
       rownames = FALSE,
       extensions = c("RowGroup", "Buttons"),
       options = list(pageLength = 25,
@@ -337,25 +430,100 @@ server <- function(input, output, session) {
     )
   })
 
+
+
   # Render the protocol table using DT
-  output$tbl_protocol <- DT::renderDataTable(dat_protocol_tbl(),
-                                             colnames = c("Protocol",
-                                                          "Refuge",
-                                                          "Survey Name"),
-                                             rownames = FALSE,
-                                             options = list(pageLength = 25,
-                                                            dom = "Bfrtip",
-                                                            buttons = c("print", "excel")
-                                                            )
-  )
+  output$tbl_protocol <- DT::renderDT(server = FALSE, {
+    DT::datatable(
+      dat_protocol_tbl(),
+      colnames = c("Protocol",
+                   "Refuge",
+                   "Survey Name"),
+      filter = "top",
+      rownames = FALSE,
+      extensions = c("RowGroup", "Buttons"),
+      options = list(pageLength = 25,
+                     dom = "Bfrtip",
+                     rowGroup = list(dataSrc = 0),
+                     columnDefs = list(list(visible = FALSE,
+                                            targets = 0)),
+                     buttons =
+                       list(
+                         list(
+                           extend = "print",
+                           buttons = "print",
+                           exportOptions = list(
+                             modifiers = list(page = "all")
+                           )
+                         ),
+                         list(
+                           extend = "excel",
+                           buttons = "excel",
+                           exportOptions = list(
+                             modifiers = list(page = "all")
+                           )
+                         )
+                       )
+      )
+    )
+  })
+
+  # Render the annual update table using DT
+  output$tbl_conducted <- DT::renderDT(server = FALSE, {
+    DT::datatable(
+      dat_conducted_tbl(),
+      colnames = c("Survey Name",
+                   "Refuge",
+                   "Year",
+                   "Conducted",
+                   "Reason",
+                   "Comment"),
+      filter = "top",
+      rownames = FALSE,
+      extensions = c("RowGroup", "Buttons"),
+      options = list(pageLength = 25,
+                     dom = "Bfrtip",
+                     rowGroup = list(dataSrc = 0),
+                     columnDefs = list(list(visible = FALSE,
+                                            targets = 0)),
+                     buttons =
+                       list(
+                         list(
+                           extend = "print",
+                           buttons = "print",
+                           exportOptions = list(
+                             modifiers = list(page = "all")
+                           )
+                         ),
+                         list(
+                           extend = "excel",
+                           buttons = "excel",
+                           exportOptions = list(
+                             modifiers = list(page = "all")
+                           )
+                         )
+                       )
+      )
+    )
+  })
+
+  # output$tbl_protocol <- DT::renderDataTable(dat_protocol_tbl(),
+  #                                            colnames = c("Protocol",
+  #                                                         "Refuge",
+  #                                                         "Survey Name"),
+  #                                            rownames = FALSE,
+  #                                            options = list(pageLength = 25,
+  #                                                           dom = "Bfrtip",
+  #                                                           buttons = c("print", "excel")
+  #                                            ))
 
   # Create html code for the summary panel
   output$dat_panel <- renderUI({
     HTML(
       paste(sep = "<br/>",
-            paste("<h4>", "<b>Refuges:</b> ", nrow(dat_map())),
-            paste("<b>Surveys:</b> ", sum(dat_map()$Surveys)),
-            paste("<b>Protocols:</b> ", n_distinct(dat()$ProtocolTitle) - 1, "</h4>")
+            paste("<h4>", "<b>Refuges:</b> ", nlevels(droplevels(dat()$StationName))),
+            paste("<b>Surveys:</b> ", dplyr::n_distinct(dat()$SurveyName)),
+            paste("<b>Protocols:</b> ", nlevels(droplevels(dat()$ProtocolTitle)), "</h4>")
       )
     )
   })
