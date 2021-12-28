@@ -114,7 +114,7 @@ ui <- function(request) {
   shiny::fluidPage(theme = shinythemes::shinytheme("cerulean"),
                    navbarPage(
                      title = "Refuge Surveys",
-                     tabPanel("Home",
+                     tabPanel("", icon = icon("home", lib =  "glyphicon"), value = "home",
                               fluidRow(
                                 column(2,
                                        fluidRow(
@@ -175,14 +175,14 @@ ui <- function(request) {
                                                                                   height = 500)
                                                     ),
                                                     column(8,
-                                                           br(),
-                                                           br(),
-                                                           br(),
-                                                           plotly::plotlyOutput("plot")  # Show a bar plot
+                                                           # br(),
+                                                           # br(),
+                                                           # br(),
+                                                           DT::DTOutput("tbl_survey")  # Show a summary table of surveys
                                                     )
                                                   ),
                                                   hr(),
-                                                  DT::DTOutput("tbl_survey")  # Show a summary table of surveys
+                                                  plotly::plotlyOutput("plot")  # Show a bar plot
                                          ),
                                          tabPanel("Surveys",
 
@@ -204,6 +204,17 @@ ui <- function(request) {
                                        )
                                 )
                               )
+                     ),
+                     tabPanel("Instructions",
+                              "Click",
+                              tags$a(href="https://github.com/mccrea-cobb/refuge-survey-app#refuge-survey-shiny-app",
+                                     "here"),
+                              "for instructions on how to use this app."
+                              # tags$iframe(src ="https://usfws.github.io/escapement/",
+                              #             height = 1200,
+                              #             width = 1200,
+                              #             frameborder = "no"
+                              #             )
                      )
                    )
   )
@@ -455,7 +466,7 @@ server <- function(input, output, session) {
       filter = "top",
       rownames = FALSE,
       extensions = c("RowGroup", "Buttons"),
-      options = list(pageLength = 25,
+      options = list(pageLength = 5,
                      dom = "Bfrtip",
                      rowGroup = list(dataSrc = 0),
                      columnDefs = list(list(visible = FALSE,
