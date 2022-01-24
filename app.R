@@ -168,7 +168,7 @@ ui <- function(request) {
                                 ),
                                 column(10,
                                        tabsetPanel(
-                                         tabPanel("Map",
+                                         tabPanel("Search",
                                                   fluidRow(
                                                     column(4,
                                                            leaflet::leafletOutput("map",
@@ -182,21 +182,16 @@ ui <- function(request) {
                                                     )
                                                   ),
                                                   hr(),
-                                                  plotly::plotlyOutput("plot")  # Show a bar plot
+                                                  plotly::plotlyOutput("plot",
+                                                                       height = "350px")  # Show a bar plot
                                          ),
-                                         tabPanel("Surveys",
-
-                                                  br(),
-
-                                                  #DT::DTOutput("tbl_survey", height = 500)  # Show a summary table of surveys
-                                         ),
-                                         tabPanel("Protocols",
+                                         tabPanel("View Protocols",
 
                                                   br(),
 
                                                   DT::DTOutput("tbl_protocol", height = 500)  # Show a summary table of protocols
                                          ),
-                                         tabPanel("Annual Updates",
+                                         tabPanel("Survey Activity",
 
                                                   br(),
 
@@ -207,7 +202,7 @@ ui <- function(request) {
                      ),
                      tabPanel("Instructions",
                               "Click",
-                              tags$a(href="https://github.com/mccrea-cobb/refuge-survey-app#refuge-survey-shiny-app",
+                              tags$a(href="https://github.com/mccrea-cobb/refuge-survey-app#instructions",
                                      "here"),
                               "for instructions on how to use this app."
                               # tags$iframe(src ="https://usfws.github.io/escapement/",
@@ -428,7 +423,11 @@ server <- function(input, output, session) {
                                     comment = character())
       } else{
 
-        dat_conducted <- dat_conducted %>% mutate(year = as.numeric(year))
+        dat_conducted <- dat_conducted %>%
+          mutate(year = as.numeric(year)) %>%
+          filter(startYear != "Future/TBD") %>%  # filter out future surveys
+          mutate(startYear = as.numeric(startYear)) %>%
+          filter(startYear <= format(Sys.Date(), "%Y"))  # filter out surveys starting after this year
 
         first_year <- min(dat_conducted$year, na.rm = T)
         last_year <- max(dat_conducted$year, na.rm = T)
