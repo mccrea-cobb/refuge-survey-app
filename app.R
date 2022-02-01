@@ -352,7 +352,7 @@ server <- function(input, output, session) {
                        radius = ~ sqrt(dat_map()$Surveys),
                        weight = 5,
                        color = ~pal(dat_map()$Zone),
-                       fillColor = "#FF0000",
+                       fillColor = ~pal(dat_map()$Zone),
                        fillOpacity = 0.7,
                        popup = paste(dat_map()$StationName, "<br>",
                                      dat_map()$Surveys, "Surveys", "<br>",
