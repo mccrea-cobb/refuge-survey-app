@@ -205,11 +205,12 @@ ui <- function(request) {
                               tags$a(href="https://github.com/mccrea-cobb/refuge-survey-app#instructions",
                                      "here"),
                               "for instructions on how to use this app."
-                              # tags$iframe(src ="https://usfws.github.io/escapement/",
-                              #             height = 1200,
-                              #             width = 1200,
-                              #             frameborder = "no"
-                              #             )
+                     ),
+                     tabPanel("Feature Request/Report a Bug",
+                              "Click",
+                              tags$a(href="https://github.com/mccrea-cobb/refuge-survey-app/issues/new",
+                                     "here"),
+                              "to submit a feature request or report a bug."
                      )
                    )
   )
