@@ -206,11 +206,17 @@ ui <- function(request) {
                                      "here"),
                               "for instructions on how to use this app."
                      ),
-                     tabPanel("Feature Request/Report a Bug",
+                     tabPanel("Submit an Issue",
                               "Click",
                               tags$a(href="https://github.com/mccrea-cobb/refuge-survey-app/issues/new",
                                      "here"),
-                              "to submit a feature request or report a bug."
+                              "to submit a feature request or report a bug through GitHub.",
+                              br(), br(),
+                              "You can also contact the developer:",
+                              br(),
+                              "McCrea Cobb ",
+                              tags$a(href="mailto:mccrea.cobb@fws.gov",
+                                     "mccrea_cobb@fws.gov"),
                      )
                    )
   )
