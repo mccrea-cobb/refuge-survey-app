@@ -61,8 +61,11 @@ library(kableExtra)
 # # # Save it
 # # save(input_dat, file = "./data/dat.Rdata")
 #
+
+
+
 # ##----
-# # Load the data using PRIMR web services (no VPN required)
+# Load the data using PRIMR web services (no VPN required)
 # library(iris)
 # library(tidyverse)
 #
@@ -123,7 +126,7 @@ ui <- function(request) {
                                          ),
                                          column(6,
                                                 htmlOutput("dat_panel")  # Add a header
-                                         )
+                                                )
                                        ),
 
                                        hr(),
@@ -175,9 +178,6 @@ ui <- function(request) {
                                                                                   height = 500)
                                                     ),
                                                     column(8,
-                                                           # br(),
-                                                           # br(),
-                                                           # br(),
                                                            DT::DTOutput("tbl_survey")  # Show a summary table of surveys
                                                     )
                                                   ),
@@ -185,13 +185,17 @@ ui <- function(request) {
                                                   plotly::plotlyOutput("plot",
                                                                        height = "350px")  # Show a bar plot
                                          ),
-                                         tabPanel("View Protocols",
+                                         tabPanel("Survey Details",
+                                                  # textOutput("selected2"[1])
+                                                  htmlOutput("details")
+                                         ),
+                                         tabPanel("Protocols",
 
                                                   br(),
 
                                                   DT::DTOutput("tbl_protocol", height = 500)  # Show a summary table of protocols
                                          ),
-                                         tabPanel("Survey Activity",
+                                         tabPanel("Annual Activity",
 
                                                   br(),
 
@@ -268,11 +272,17 @@ server <- function(input, output, session) {
 
   dat <- reactive({
     if (is.null(search())) {
-      dat_zone()
+      dat_zone() %>%
+        arrange(StationName, SurveyName)
+
     } else
       dat_zone() %>%
-      filter(stringr::str_detect(tolower(SurveyName), search()))
+      filter(stringr::str_detect(tolower(SurveyName), search())) %>%
+      arrange(StationName, SurveyName)
+
   })
+
+
 
 ##-----
 
@@ -362,6 +372,8 @@ server <- function(input, output, session) {
                 opacity = 1)
   })
 
+
+
   # Create a summary dataset that reacts to user inputs for the survey table
   dat_survey_tbl <- reactive({
     if (nrow(dat()) == 0) {   # if there is no data, create an empty data frame
@@ -382,7 +394,7 @@ server <- function(input, output, session) {
     }
 
     dat_survey_tbl <- dat_survey_tbl %>%
-      mutate(Products = paste0("<a href='", servCatUrl, "' target='_blank'>", "ServCat link", "</a>")) %>%
+      mutate(Products = paste0("<a href='", servCatUrl, "' target='_blank'>", as.character(icon("link", lib = "glyphicon")), "</a>")) %>%
       mutate(Products = na_if(Products, "<a href='NA' target='_blank'>ServCat link</a>")) %>%
       dplyr::select(StationName,
                     SurveyName,
@@ -394,6 +406,8 @@ server <- function(input, output, session) {
     }
   })
 
+
+
   # Create a summary dataset that reacts to user inputs for the protocol table
   dat_protocol_tbl <- reactive({
     dat() %>%
@@ -403,19 +417,23 @@ server <- function(input, output, session) {
                     SurveyName) %>%
       filter(ProtocolTitle != "NA") %>%
       mutate(ProtocolUrl = paste0("https://ecos.fws.gov/ServCat/Reference/Profile/", protocol.servCatId)) %>%
-      mutate(ProtocolTitle = paste0(ProtocolTitle, " (", paste0("<a href='", ProtocolUrl, "' target='_blank'>", "ServCat link", "</a>"), ")")) %>%
-      select(ProtocolTitle, StationName, SurveyName)
+      mutate(ProtocolTitle = paste0(ProtocolTitle, " (", paste0("<a href='", ProtocolUrl, "' target='_blank'", as.character(icon("link", lib = "glyphicon")), "</a>"), ")")) %>%
+      select(ProtocolTitle, StationName, SurveyName) %>%
+      arrange(ProtocolTitle)
   })
+
+
 
   # Create a summary dataset that reacts to user inputs for the annual update table
   dat_conducted_tbl <- reactive({
     if (nrow(dat()) == 0) {   # if there is no data, create an empty data frame
       dat_conducted <- data.frame(SurveyName = character(),
                                   StationName = character(),
-                                  year = numeric(),
-                                  isSurveyConducted = character(),
-                                  reason = character(),
-                                  comment = character())
+                                  Year = numeric(),
+                                  Scheduled = character(),
+                                  Conducted = character(),
+                                  Reason = character(),
+                                  Comment = character())
     } else { # Otherwise...
       dat_conducted <- unnest(dat(), Conducted, keep_empty = TRUE)
 
@@ -424,38 +442,50 @@ server <- function(input, output, session) {
       if(!identical(missing, character(0))) {
         dat_conducted <- data.frame(SurveyName = character(),
                                     StationName = character(),
-                                    year = numeric(),
-                                    isSurveyConducted = character(),
-                                    reason = character(),
-                                    comment = character())
-      } else{
+                                    Year = numeric(),
+                                    Scheduled = character(),
+                                    Conducted = character(),
+                                    Reason = character(),
+                                    Comment = character())
+      } else {
 
         dat_conducted <- dat_conducted %>%
           mutate(year = as.numeric(year)) %>%
           filter(startYear != "Future/TBD") %>%  # filter out future surveys
           mutate(startYear = as.numeric(startYear)) %>%
-          filter(startYear <= format(Sys.Date(), "%Y"))  # filter out surveys starting after this year
+          filter(startYear <= format(Sys.Date(), "%Y")) %>%  # filter out surveys starting after current year
+          mutate(year = ifelse(is.na(year), startYear, year), # Make startYear the year value for surveys with no annual updates (those with NAs)
+                 FrequencyNum = ifelse(Frequency == "Recurring -- every year" | Frequency == "Sporadic or Ad Hoc" | Frequency == "Occurs one time only", 1, # Create a numeric frequency value
+                                       ifelse(Frequency == "Recurring -- every two years", 2,
+                                              ifelse(Frequency == "Recurring -- every three years", 3,
+                                                     ifelse(Frequency == "Recurring -- every five years", 5,
+                                                            ifelse(Frequency == "Recurring -- every decade", 10, 0))))))
 
-        first_year <- min(dat_conducted$year, na.rm = T)
-        last_year <- max(dat_conducted$year, na.rm = T)
-
-        dat_conducted %>%
-          group_by(SurveyName, StationName) %>%
-          expand(year = first_year:last_year) %>%
+        dat_conducted <- dat_conducted %>%
+          group_by(SurveyName, StationName, FrequencyNum, startYear) %>%
+          expand(year = startYear:ifelse(endYear == "Indefinite" | endYear > as.numeric(format(Sys.Date(), "%Y")), as.numeric(format(Sys.Date(), "%Y")), as.numeric(endYear))) %>%
           ungroup() %>%
           left_join(dat_conducted) %>%
-          select(SurveyName, StationName, year, isSurveyConducted, reason, comment) %>%
+          select(SurveyName, StationName, FrequencyNum, startYear, year, isSurveyConducted, reason, comment) %>%
           rename(Conducted = isSurveyConducted,
                  Reason = reason,
                  Comment = comment,
                  Year = year) %>%
-          mutate(Conducted = as.factor(Conducted),
-                 Year  = as.integer(Year),
-                 Reason = as.factor(Reason)) %>%
-          mutate(Conducted = forcats::fct_recode(Conducted, "No" = "false", "Yes" = "true"))
+          mutate(YearsSinceStart = Year - startYear,
+                 Scheduled = YearsSinceStart %% FrequencyNum == 0,
+                 Conducted = as.factor(Conducted),
+                 Year = as.factor(Year),
+                 Reason = as.factor(Reason),
+                 Conducted = forcats::fct_recode(Conducted, "No" = "false", "Yes" = "true"),
+                 Scheduled = forcats::fct_recode(as.factor(Scheduled), "No" = "FALSE", "Yes" = "TRUE")) %>%
+          select(-c(FrequencyNum, YearsSinceStart, startYear)) %>%
+          relocate(StationName, SurveyName, Year, Scheduled, Conducted, Reason, Comment) %>%
+          filter(Conducted == "Yes" | Conducted  == "No") %>%
+          arrange(StationName)
       }
     }
   })
+
 
 
   # Render the survey table using DT
@@ -464,13 +494,14 @@ server <- function(input, output, session) {
       dat_survey_tbl(),
       escape = F,
       colnames = c("Refuge",
-                   "Survey Name",
+                   "Survey",
                    "Products",
                    "Status",
                    "Survey Type",
                    "Selected?"),
       filter = "top",
       rownames = FALSE,
+      selection = "single",
       extensions = c("RowGroup", "Buttons"),
       options = list(pageLength = 5,
                      dom = "Bfrtip",
@@ -500,6 +531,31 @@ server <- function(input, output, session) {
 
 
 
+  # Create text in the Details Tab from the selected row in tbl_survey
+  selected <- reactive({
+    if(input$tbl_survey_rows_selected) {
+    selectedrow <- input$tbl_survey_rows_selected
+    selected <- dat() %>%
+      slice(selectedrow)
+    } else selected <- NA
+  })
+  output$details <- renderUI({
+    validate(need(input$tbl_survey_rows_selected, "Select a survey (row) from the table in the Search Tab."))
+    HTML(
+      paste(
+        sep = "<br>",
+        paste0("<center><h2><b>", selected()[["SurveyName"]], "</b></h2></center>"),
+        paste0("<center><h4><b>", selected()[["StationName"]], "</b></h4></center>"),
+        paste0("<b>Survey Coordinator: </b>", selected()[["coordinatorName"]], " (", selected()[["coordinatorTitle"]], ", ", selected()[["coordinatorEmail"]], ")"),
+        paste0("<b>Years: </b>", selected()[["startYear"]], "-", selected()[["endYear"]]),
+        paste0("<b>Products: </b>", selected()[["reports"]][[1]]$servCatUrl),
+        paste0("<b>Protocol: </br>", as.character(selected()[["ProtocolTitle"]]))
+        )
+    )
+  })
+
+
+
   # Render the protocol table using DT
   output$tbl_protocol <- DT::renderDT(server = FALSE, {
     DT::datatable(
@@ -507,7 +563,7 @@ server <- function(input, output, session) {
       escape = F,
       colnames = c("Protocol",
                    "Refuge",
-                   "Survey Name"),
+                   "Survey"),
       filter = "top",
       rownames = FALSE,
       extensions = c("RowGroup", "Buttons"),
@@ -541,9 +597,10 @@ server <- function(input, output, session) {
   output$tbl_conducted <- DT::renderDT(server = FALSE, {
     DT::datatable(
       dat_conducted_tbl(),
-      colnames = c("Survey Name",
-                   "Refuge",
+      colnames = c("Refuge",
+                   "Survey",
                    "Year",
+                   "Scheduled",
                    "Conducted",
                    "Reason",
                    "Comment"),
@@ -580,12 +637,14 @@ server <- function(input, output, session) {
   output$dat_panel <- renderUI({
     HTML(
       paste(sep = "<br/>",
-            paste("<h4>", "<b>Refuges:</b> ", nlevels(droplevels(dat()$StationName))),
-            paste("<b>Surveys:</b> ", dplyr::n_distinct(dat()$SurveyName)),
+            paste("<h4>", "<font color='red'>", "<b>Refuges:</b> ", nlevels(droplevels(dat()$StationName))),
+            paste("<b>Surveys:</b> ", nrow(dat())),
             paste("<b>Protocols:</b> ", nlevels(droplevels(dat()$ProtocolTitle)), "</h4>")
       )
     )
   })
+
+
 
   # Set up parameters to pass to Rmd report
   params <- list(input_dat = input_dat,

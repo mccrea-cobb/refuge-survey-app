@@ -1,0 +1,214 @@
+---
+title:  |
+    | Annual Report of Survey Activities on Refuges  
+    |
+    | ![](bear.jpg){width=7in}
+output:
+  pdf_document:
+    latex_engine: xelatex
+    number_sections: no
+    toc: no
+  word_document:
+    toc: yes
+  html_document:
+    df_print: paged
+    toc: yes
+header-includes:
+  - \usepackage{fontawesome5}
+subtitle: |
+  |
+  |
+  |
+  |
+  |
+  | National Wildlife Refuge System
+  | Alaska Region
+  | 2021
+---
+
+\pagenumbering{gobble}
+
+\newpage
+
+\pagenumbering{arabic}
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ggplot2)
+library(tidyverse)
+library(kableExtra)
+```
+
+# Summary Information  
+```{r format_data, echo=F, warning=F, message=F}
+# Load the survey data locally
+load("./data/dat.Rdata")
+
+dat <- input_dat %>%
+      unnest(reports, keep_empty = TRUE) %>%
+      distinct(surveyId, .keep_all = T)
+
+dat <- unnest(dat, Conducted, keep_empty = TRUE)
+
+year_selected <- 2021
+
+dat <- dat %>% filter(year == year_selected)
+```
+
+
+```{r summary_table, echo=F, message=F}
+
+completed <- dat %>% 
+  filter(isSurveyConducted == "true") %>%
+  group_by(StationName) %>% 
+  tally()
+
+not_completed <- dat %>% 
+  filter(isSurveyConducted == "false") %>%
+  group_by(StationName) %>% 
+  tally()
+
+tbl <- merge(completed, not_completed, by = "StationName")
+
+tbl %>% kbl(col.names = c("Refuge", "Surveys completed", "Surveys not completed"),
+                     caption = "Summary of survey activity in 2021 at National Wildlife Refuges in the Alaska Region. Refuges that are not listed here did not update 2021 survey annual activities in PRIMR. Surveys were considered completed if data were collected for 75\\% or more of the scheduled sample sites in the given calendar year.",
+            booktabs = T) %>%
+    kable_styling(latex_options = c("striped", "hold_position"),
+                  position = "left")
+```
+
+
+```{r reasons, echo=F, message=F}
+dat %>%
+  filter(isSurveyConducted == "false") %>%
+  group_by(reason) %>%
+  tally() %>%
+  arrange(-n) %>%
+  kbl(col.names = c("Reason", "n"),
+               caption = "Summary of reasons for why surveys in 2021 were not completed at National Wildlife Refuges in the Alaska Region. The Administrative category includes COVID-related restrictions to field activities.",
+      booktabs = T) %>%
+    kable_styling(latex_options = c("striped", "hold_position"),
+                  position = "left")
+```
+
+
+```{r tbl_biotic_grps, echo=F, message=F}
+
+# Unnest derivedBioticGroupLevel1
+derived <- dat %>%
+  unnest(derivedBioticGroupLevel1, keep_empty = TRUE) %>%
+  filter(isSurveyConducted == "true") %>%
+  select(StationName, SurveyName, scientificName, commonName)
+
+# Unnest bioticGroupLevel1
+bio_grps <- dat %>%
+  unnest(bioticGroupLevel1, keep_empty = TRUE) %>%
+  filter(isSurveyConducted == "true") %>%
+  select(StationName, SurveyName, scientificName, commonName)
+
+# Combine them and keep distinct values, remove NAs
+foo <- rbind(derived, bio_grps)
+foo <- foo %>%
+  distinct()
+
+foo <- foo %>%
+  group_by(scientificName, commonName) %>%
+  tally() %>%
+  ungroup() %>%
+  mutate(commonName = tolower(commonName),
+         bio_grp = paste(scientificName, " (", commonName, ")", sep = ""),
+         bio_grp = replace(bio_grp, bio_grp == "NA (NA)", "Unknown")) %>%
+  select(c(bio_grp, n)) %>%
+  arrange(-n)
+  
+  kbl(foo, col.names = c("Biotic group (level 1)", "n"),
+      caption = "Summary of biotic groups (level 1) that are targeted or influenced by surveys completed in 2021 at National Wildlife Refuges in the Alaska Region, 2021. Level 1 is a high level taxonomic category ranging from Class to Kingdom. Unknown values indicate surveys without a biotic group specified in PRIMR.",
+      booktabs = T) %>%
+    kable_styling(latex_options = c("striped", "hold_position"),
+                  position = "left")
+```
+
+
+```{r, echo=F, message=F}
+## Biotic group, level 2
+  # Unnest derivedBioticGroupLevel2
+derived <- dat %>%
+  unnest(derivedBioticGroupLevel2, keep_empty = TRUE) %>%
+  filter(isSurveyConducted == "true") %>%
+  select(StationName, SurveyName, scientificName, commonName)
+
+# Unnest bioticGroupLevel2
+bio_grps <- dat %>%
+  unnest(bioticGroupLevel2, keep_empty = TRUE) %>%
+  filter(isSurveyConducted == "true") %>%
+  select(StationName, SurveyName, scientificName, commonName)
+
+# Combine them and keep distinct values, remove NAs
+foo <- rbind(derived, bio_grps)
+foo <- foo %>%
+  distinct()
+
+foo <- foo %>%
+  group_by(scientificName, commonName) %>%
+  tally() %>%
+  ungroup() %>%
+  mutate(commonName = tolower(commonName),
+         bio_grp = paste(scientificName, " (", commonName, ")", sep = ""),
+         bio_grp = replace(bio_grp, bio_grp == "NA (NA)", "Unknown")) %>%
+  select(c(bio_grp, n)) %>%
+  arrange(-n)
+  
+  kbl(foo, longtable = T, col.names = c("Biotic group (level 2)", "n"),
+      caption = "Summary of biotic groups (level 2) that are targeted or influenced by surveys completed in 2021 at National Wildlife Refuges in the Alaska Region, 2021. This is a mid-level taxonomic category ranging from Family to Order. Unknown values indicate surveys without a biotic group specified in PRIMR.",
+      booktabs = T) %>%
+    kable_styling(latex_options = c("striped", 
+                                    "hold_position",
+                                    "repeat_header"),
+                  position = "left")
+```
+
+
+
+
+\newpage
+
+```{r loop, echo=F, results='asis'}
+
+foo <- dat %>% 
+  filter(isSurveyConducted == "true") %>%
+  droplevels() %>%
+  mutate(servCatUrl = replace_na(servCatUrl, "(No ServCat project record)"),
+         answerQuestion2.text = replace_na(answerQuestion2.text, "(Not entered)"))
+foo <- split(foo, foo$StationName)
+
+  
+for (i in (1:length(foo))) {
+  cat("\n")
+  cat("#", names(foo[i]), "\n")
+  for(t in (1:length(foo[[i]]$SurveyName))) {
+    cat("## ", "[", foo[[i]]$SurveyName[t], "](https://ecos.fws.gov/primr/survey/edit/", foo[[i]]$id[t], ")", "\n", sep = "")
+    cat("**Survey record:** https://ecos.fws.gov/primr/survey/edit/", foo[[i]]$id[t], "\n", sep = "")
+    cat("\n")
+    cat("**Products:**", foo[[i]]$servCatUrl[t], "\n")
+    cat("\n")
+    cat("**Survey Coordinator:** ", foo[[i]]$coordinatorName[t], " (", foo[[i]]$coordinatorTitle[t], ")", "\n", sep = "")
+    cat("\n")
+    cat("**Email:**", foo[[i]]$coordinatorEmail[t], "\n")
+    cat("\n")
+    cat("**Why is it important to conduct this survey?**", foo[[i]]$answerQuestion2.text[t], "\n")
+    cat("\n")
+  }
+  cat("\n")
+  cat("\\newpage")
+  }
+```
+
+\newpage
+
+# \faRProject  
+## Session Info
+
+```{r session_info, results='asis', echo=F}
+sessionInfo()
+```
+

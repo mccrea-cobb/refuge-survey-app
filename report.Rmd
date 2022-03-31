@@ -1,5 +1,5 @@
 ---
-title: "Doug and Ronnie's Really Cool Refuge Survey Report"
+title: "Refuge Survey Report"
 params:
   input_dat: NA
   dat: NA
