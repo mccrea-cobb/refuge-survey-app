@@ -3,15 +3,6 @@ title:  |
     | Annual Report of Survey Activities on Refuges  
     |
     | ![](bear.jpg){width=7in}
-subtitle: |
-  |
-  |
-  |
-  |
-  |
-  | National Wildlife Refuge System
-  | Alaska Region
-  | 2021
 output:
   pdf_document:
     latex_engine: xelatex
@@ -22,6 +13,7 @@ output:
       after_body: latex/after_body.tex
     toc: yes
     toc_depth: 2
+urlcolor: blue
 ---
 
 \newpage
@@ -35,23 +27,44 @@ library(tidyverse)
 library(kableExtra)
 ```
 
-# Summary Information  
+
 ```{r import_format, echo=F, warning=F, message=F}
 # Load the survey data locally
-load("./data/dat.Rdata")
+# load("./data/dat.Rdata")
+
+source("R/global.R")
+
+region_num <- 7 
+year_selected <- 2021
+region <- regions$region_name[[region_num]]
+
+# Load the survey data 
+load("./data/input_dat.Rdata")
+# input_dat <- primr_dat_ws(region_num)
 
 dat <- input_dat %>%
       unnest(reports, keep_empty = TRUE) %>%
       distinct(surveyId, .keep_all = T)
-
 dat <- unnest(dat, Conducted, keep_empty = TRUE)
-
-year_selected <- 2021
-
 dat <- dat %>% filter(year == year_selected)
 ```
 
-  
+---
+subtitle: |
+  |
+  |
+  |
+  |
+  |
+  | National Wildlife Refuge System
+  | `r region` Region
+  | `r year_selected`
+---
+
+# Summary Information  
+
+This report summarizes survey activity on National Wildlife Refuges in the `r region` Region in `r year_selected`. The information used in this report originates from PRIMR, a database that stores descriptions of refuge surveys. Refuge staff populate PRIMR with their historic, current and planned surveys. This information is used to generate the refuge's Inventory and Monitoring Plan. Annually, refuge staff are asked to update PRIMR. As a part of this effort, Survey Coordinators (generally a refuge biologist) enter whether each current survey was completed and, if it was not, the reason that is was not completed.
+
 ```{r tbl_activity, echo=F, message=F}
 
 # Completed surveys
@@ -66,38 +79,66 @@ incomplete <- dat %>%
   group_by(StationName) %>% 
   tally()
 
+current <- input_dat %>%
+  filter(SurveyStatus == "Current" | endYear == year_selected) %>%
+  count(StationName)
+  
+
 # Merge them
-tbl <- merge(complete, incomplete, by = "StationName", all = T)
+tbl <- merge(complete, incomplete, by = "StationName", all = T) %>%
+  merge(current, by = "StationName", all = T) %>%
+  rename("complete" = n.x,
+         "incomplete" = n.y,
+         "current" = n) %>%
+  mutate(complete = as.integer(complete),
+         incomplete = as.integer(incomplete),
+         current = as.integer(current))
 
 # Add back refuges that have no activity data and mark them as "Unknown"
 refuges <- data.frame("StationName" = levels(tbl$StationName))
-tbl <- merge(tbl, refuges, by = "StationName", all.y = T)
-tbl <- tbl %>% 
-  mutate(n.x = replace(n.x, is.na(n.x), "Unknown"),
-         n.y = replace(n.y, is.na(n.y), "Unknown"))
 
-# Create tables
-tbl %>% kbl(col.names = c("Refuge", "Surveys completed", "Surveys not completed"),
-                     caption = "Summary of survey activity at National Wildlife Refuges in the Alaska Region in 2021. Surveys are considered completed if data are collected for 75\\% or more of the scheduled sample sites in the given calendar year.",
+tbl <- merge(tbl, refuges, by = "StationName", all.y = T) %>%
+  # Add a TOTAL row
+  bind_rows(summarise(.,
+                      across(where(is.numeric), sum, na.rm = T),
+                      across(where(is.factor), ~"TOTAL"))) %>%
+  # Add a reported row (reporting rate)
+  rowwise() %>%
+  mutate(reported = sum(complete, incomplete, na.rm = T) / current,
+         reported = scales::label_percent()(reported),
+         complete = replace(complete, is.na(complete), "--"),
+         incomplete = replace(incomplete, is.na(incomplete), "--")) %>%
+  # Reorder the columns
+  select(StationName, current, reported, complete, incomplete)
+
+# Create a formatted table
+tbl %>% kbl(col.names = c("Refuge", "Current surveys", "Reporting rate", "Completed surveys", "Not completed surveys"),
+            longtable = T, 
+            caption = paste("Summary of survey activity at National Wildlife Refuges in the", region, "Region in 2021. Surveys are considered completed if data are collected for 75\\% or more of the scheduled sample sites in the given calendar year. Reporting rate indicates the percentage of current surveys at a refuge that had been reported as completed or not completed in PRIMR."),
             booktabs = T) %>%
-    kable_styling(latex_options = c("striped", 
-                                    "HOLD_position"),
-                  position = "left")
+  kable_styling(latex_options = c("striped", 
+                                  "HOLD_position",
+                                  "repeat_header"),
+                position = "left")
 ```
 
   
 ```{r tbl_reasons, echo=F, message=F}
+covid_comments <- sum(str_count(dat$comment, "(?i)covid"), na.rm=T)  # (?i) = ignore case sensitivity
+
 dat %>%
   filter(isSurveyConducted == "false") %>%
   group_by(reason) %>%
   tally() %>%
   arrange(-n) %>%
-  kbl(col.names = c("Reason", "n"),
-               caption = "Summary of reasons for why surveys were not completed at National Wildlife Refuges in the Alaska Region in 2021. The Administrative category includes COVID-related restrictions to field activities.",
+  kbl(col.names = c("Reason", "n"),      
+      longtable = T, 
+      caption = paste0("Summary of reasons for why surveys were not completed at National Wildlife Refuges in the", region, " Region in ", year_selected, ". ", "COVID-related restrictions were described as the primary reason that surveys were not completed under the Administrative and Weather and Disturbance categories, preventing a total of ", covid_comments, " surveys from being completed."),
       booktabs = T) %>%
-    kable_styling(latex_options = c("striped", 
-                                    "HOLD_position"),
-                  position = "left")
+  kable_styling(latex_options = c("striped", 
+                                  "HOLD_position",
+                                  "repeat_header"),
+                position = "left")
 ```
 
   
@@ -116,11 +157,11 @@ bio_grps <- dat %>%
   select(StationName, SurveyName, scientificName, commonName)
 
 # Combine them and keep distinct values, remove NAs
-foo <- rbind(derived, bio_grps)
-foo <- foo %>%
+bio1 <- rbind(derived, bio_grps)
+bio1 <- bio1 %>%
   distinct()
 
-foo <- foo %>%
+bio1 <- bio1 %>%
   group_by(scientificName, commonName) %>%
   tally() %>%
   ungroup() %>%
@@ -129,18 +170,38 @@ foo <- foo %>%
          bio_grp = replace(bio_grp, bio_grp == "NA (NA)", "Unknown")) %>%
   select(c(bio_grp, n)) %>%
   arrange(-n)
-  
-  kbl(foo, 
-      col.names = c("Biotic group (Level 1)", "n"),
-      caption = "Summary of biotic groups (Level 1) that were targeted or influenced by surveys completed at National Wildlife Refuges in the Alaska Region in 2021. Level 1 is a high level taxonomic category ranging from Class to Kingdom. Unknown values indicate surveys without a biotic group (Level 1) specified in PRIMR.",
-      booktabs = T) %>%
-    kable_styling(latex_options = c("striped", 
-                                    "HOLD_position"),
-                  position = "left")
+
+kbl(bio1,
+    longtable = T,
+    col.names = c("Biotic group (Level 1)", "n"),
+    caption = paste("Summary of biotic groups (Level 1) that were targeted or influenced by surveys completed at National Wildlife Refuges in the", region, "Region in 2021. Level 1 is a high level taxonomic category ranging from Class to Kingdom. Unknown values indicate surveys without a biotic group (Level 1) specified in PRIMR."),
+    booktabs = T) %>%
+  kable_styling(latex_options = c("striped", 
+                                  "HOLD_position",
+                                  "repeat_header"),
+                position = "left")
+```
+
+
+```{r plot_bio_grp1, echo=F, message=F, fig.cap=paste("Summary of biotic groups (Level 1) that were targeted or influenced by surveys completed at National Wildlife Refuges in the", region, "Region in 2021. Level 1 is a high level taxonomic category ranging from Class to Kingdom.")}
+
+bio1 %>%
+  # filter and reorder the data
+  filter(bio_grp != "Unknown") %>%
+  arrange(-n) %>%
+  mutate(bio_grp = factor(bio_grp, levels = bio_grp)) %>%  # This trick updates the factor level order
+  # plot it
+  ggplot(aes(x = bio_grp, y = n)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  geom_text(aes(label = n), vjust = -1.5, color = "black", size = 2.5) +
+  theme_minimal() +
+  xlab("Biotic groups (Level 1)") +
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 10))
 ```
 
   
 ```{r tbl_biotic_grp2, echo=F, message=F, fig.align='left'}
+
 ## Biotic group, level 2
   # Unnest derivedBioticGroupLevel2
 derived <- dat %>%
@@ -155,11 +216,11 @@ bio_grps <- dat %>%
   select(StationName, SurveyName, scientificName, commonName)
 
 # Combine them and keep distinct values, remove NAs
-foo <- rbind(derived, bio_grps)
-foo <- foo %>%
+bio2 <- rbind(derived, bio_grps)
+bio2 <- bio2 %>%
   distinct()
 
-foo <- foo %>%
+bio2 <- bio2 %>%
   group_by(scientificName, commonName) %>%
   tally() %>%
   ungroup() %>%
@@ -168,16 +229,16 @@ foo <- foo %>%
          bio_grp = replace(bio_grp, bio_grp == "NA (NA)", "Unknown")) %>%
   select(c(bio_grp, n)) %>%
   arrange(-n)
-  
-  kbl(foo, 
-      longtable = T, 
-      col.names = c("Biotic group (Level 2)", "n"),
-      caption = "Summary of biotic groups (Level 2) that were targeted or influenced by surveys completed at National Wildlife Refuges in the Alaska Region in 2021. Level 2 is a mid-level taxonomic category ranging from Family to Order. Unknown values indicate surveys without a biotic group (Level 2) specified in PRIMR.",
-      booktabs = T) %>%
-    kable_styling(latex_options = c("striped", 
-                                    "HOLD_position",
-                                    "repeat_header"),
-                  position = "left")
+
+kbl(bio2, 
+    longtable = T, 
+    col.names = c("Biotic group (Level 2)", "n"),
+    caption = paste("Summary of biotic groups (Level 2) that were targeted or influenced by surveys completed at National Wildlife Refuges in the", region, "Region in 2021. Level 2 is a mid-level taxonomic category ranging from Family to Order. Unknown values indicate surveys without a biotic group (Level 2) specified in PRIMR."),
+    booktabs = T) %>%
+  kable_styling(latex_options = c("striped", 
+                                  "HOLD_position",
+                                  "repeat_header"),
+                position = "left")
 ```
 
   
@@ -232,9 +293,9 @@ foo <- foo %>%
 
 \newpage
 
-# Survey Conducted in 2021  
+# Survey Conducted in the `r region` Region in `r year_selected`  
 
-The following lists refuge surveys that are reported in PRIMR as completed in 2021. Surveys are considered completed if data are collected for 75% or more of the scheduled sample sites in the given calendar year. 
+The following lists refuge surveys that are scheduled in reported in PRIMR as completed in the `r region` region in `r year_selected` Surveys are considered completed if data are collected for 75% or more of the scheduled sample sites in the given calendar year. 
 
 ```{r refuge_summaries, echo=F, results='asis'}
 
@@ -248,7 +309,7 @@ foo <- dat %>%
          ProtocolTitle = replace_na(ProtocolTitle, ("(No protocol)")))
 foo <- split(foo, foo$StationName)
 
-  
+
 for (i in (1:length(foo))) {
   cat("\n")
   cat("##", names(foo[i]), "\n")
@@ -262,7 +323,10 @@ for (i in (1:length(foo))) {
     cat("\n")
     cat("**Products:**", foo[[i]]$servCatUrl[t], "\n")
     cat("\n")
+    if(foo[[i]]$ProtocolTitle[t] != "(No protocol)") {
       cat("**Protocol:** ", "[", foo[[i]]$ProtocolTitle[t], "](https://ecos.fws.gov/ServCat/Reference/Profile/", foo[[i]]$protocol.servCatId[t], ")", " \n", sep = "")
+      } else {
+        cat("**Protocol:** (No Protocol)", "\n")}
     cat("\n")
     cat("**Survey Coordinator:** ", foo[[i]]$coordinatorName[t], " (", foo[[i]]$coordinatorTitle[t], ")", "\n", sep = "")
     cat("\n")
@@ -273,7 +337,7 @@ for (i in (1:length(foo))) {
   }
   cat("\n")
   cat("\\newpage")
-  }
+}
 ```
 
 \newpage
