@@ -1,10 +1,11 @@
 ---
 title:  |
-    | Annual Report of Survey Activities on Refuges  
+    | **Annual Report of Survey Activities on Refuges**  
+    |
     |
     | ![](bear.jpg){width=7in}
 output:
-  pdf_document:
+  bookdown::pdf_document2:
     latex_engine: xelatex
     number_sections: no
     includes:
@@ -28,9 +29,7 @@ library(kableExtra)
 ```
 
 
-```{r import_format, echo=F, warning=F, message=F}
-# Load the survey data locally
-# load("./data/dat.Rdata")
+```{r import-format, echo=F, warning=F, message=F}
 
 source("R/global.R")
 
@@ -42,11 +41,36 @@ region <- regions$region_name[[region_num]]
 load("./data/input_dat.Rdata")
 # input_dat <- primr_dat_ws(region_num)
 
-dat <- input_dat %>%
-      unnest(reports, keep_empty = TRUE) %>%
-      distinct(surveyId, .keep_all = T)
-dat <- unnest(dat, Conducted, keep_empty = TRUE)
-dat <- dat %>% filter(year == year_selected)
+dat_scheduled <- input_dat %>%
+  filter(startYear != "Future/TBD") %>%  # filter out future surveys
+  mutate(startYear = as.numeric(startYear)) %>%
+  filter(startYear <= year_selected) %>%  # filter out surveys starting after current year
+  mutate(endYear = na_if(endYear, "Indefinite"),
+         endYear = as.numeric(endYear)) %>%
+  filter(is.na(endYear) | endYear >= year_selected) %>%
+  mutate(FrequencyNum = ifelse(Frequency == "Recurring -- every year" | Frequency == "Sporadic or Ad Hoc" | Frequency == "Occurs one time only", 1, # Create a numeric frequency value
+                               ifelse(Frequency == "Recurring -- every two years", 2,
+                                      ifelse(Frequency == "Recurring -- every three years", 3,
+                                             ifelse(Frequency == "Recurring -- every five years", 5,
+                                                    ifelse(Frequency == "Recurring -- every decade", 10, 0))))))
+
+
+dat_scheduled <- dat_scheduled %>%
+  rowwise() %>%
+  mutate(scheduled = (year_selected %in% seq(startYear, year_selected, by = FrequencyNum))) %>%
+  filter(scheduled == TRUE) 
+
+dat_scheduled <- dat_scheduled %>%
+  unnest(reports, keep_empty = TRUE) %>%
+  distinct(surveyId, .keep_all = T)
+
+dat_conducted <- unnest(dat_scheduled, Conducted, keep_empty = TRUE)
+
+dat_conducted <- dat_conducted %>% filter(year == year_selected | is.na(year))
+
+dat <- merge(dat_conducted, dat_scheduled, all = T)
+
+
 ```
 
 ---
@@ -55,106 +79,101 @@ subtitle: |
   |
   |
   |
+  | **National Wildlife Refuge System**
+  | **`r region` Region**
   |
-  | National Wildlife Refuge System
-  | `r region` Region
   | `r year_selected`
+  |
+  | ![](Fwslogo.png){width=0.5in}
 ---
 
-# Summary Information  
+# Introduction  
 
-This report summarizes survey activity on National Wildlife Refuges in the `r region` Region in `r year_selected`. The information used in this report originates from PRIMR, a database that stores descriptions of refuge surveys. Refuge staff populate PRIMR with their historic, current and planned surveys. This information is used to generate the refuge's Inventory and Monitoring Plan. Annually, refuge staff are asked to update PRIMR. As a part of this effort, Survey Coordinators (generally a refuge biologist) enter whether each current survey was completed and, if it was not, the reason that is was not completed.
+Understanding annual activities for scheduled refuge surveys facilitates yearly accomplishment reporting, informs the development of Inventory and Monitoring Plans, and is useful for documenting lack of resources to conduct surveys. This report summarizes annual survey activity for scheduled surveys on National Wildlife Refuges in the `r region` Region in `r year_selected`. It provides a refuge-specific understanding about whether data were collected for scheduled surveys, and it quantifies reasons for why data were not collected for scheduled surveys. Finally, it summarizes which biotic groups and species were targeted by surveys that had data collected.
 
-```{r tbl_activity, echo=F, message=F}
+
+# Methods
+
+The information used in this report originates from [PRIMR](https://ecos.fws.gov/primr/), a tool to store and retrieve information about survey activities occurring on Refuges. The PRIMR module allows users to document and catalog legacy, ongoing, and planned surveys. Refuge staff populate PRIMR with their historic, current, expected, and future surveys. This information is used to generate the refuge's Inventory and Monitoring Plan. 
+
+Refuge scientists are requested by the Refuge Inventory and Monitoring Program to annually review and update their survey records in PRIMR. As a part of this effort, refuge scientists report on whether data were collected for each survey that was scheduled for data collection the previous calendar year. A scheduled survey is one that was expected to have data collected in `r year_selected` based on the survey start year and annual frequency listed in PRIMR (e.g., a survey that started in 2017 and occurs every 5 years). A survey is considered to have had data collected if data were collected at 75% or more of the scheduled sample sites in a given calendar year. If data were not collected, PRIMR requires users to enter a primary reason and optional comments to provide additional site-specific details. The list of possible reasons includes: 
+
+- **Lack of refuge staff**: data not collected due to lack of staff, expertise or appropriate training
+- **Lack of equipment**: data could not be collected due to lack of functional transportation, field or lab equipment/analysis, or sufficient supplies
+- **Weather or disturbance**: data could not be collected because of weather (lasting snow, or storm damage) or other events (fire, toxic spill, global pandemic) that cause lack of physical access or hazard to staff
+-  **Administrative**: data could not be collected due to a change of priorities, lack of permissions/permits, or change in protective status of survey area that prevented access to sampling sites
+- **Partner resources**: data not collected because partner could not provide intended resources (funds, personnel time or equipment). 
+
+Based on the annual update reporting provided by refuge staff and the information associated with refuge records in PRIMR, we summarized scheduled surveys in `r `year_selected`. This included which surveys did and did not have data collected, by refuge; what reasons prevented data collection, and the biotic groups and species on which data was collected. Finally, the report provides a list of surveys with summary information, by refuge, that on which data were collected.  
+
+```{r activity, echo=F, message=F}
 
 # Completed surveys
-complete <- dat %>% 
+completed <- dat %>% 
   filter(isSurveyConducted == "true") %>%
-  group_by(StationName) %>% 
-  tally()
+  count(StationName)
 
 # Incomplete surveys
 incomplete <- dat %>% 
   filter(isSurveyConducted == "false") %>%
-  group_by(StationName) %>% 
-  tally()
+  count(StationName)
 
-current <- input_dat %>%
-  filter(SurveyStatus == "Current" | endYear == year_selected) %>%
+scheduled <- dat %>%
   count(StationName)
   
-
 # Merge them
-tbl <- merge(complete, incomplete, by = "StationName", all = T) %>%
-  merge(current, by = "StationName", all = T) %>%
+dat_activity <- merge(completed, incomplete, by = "StationName", all = T) %>%
+  merge(scheduled, by = "StationName", all = T) %>%
   rename("complete" = n.x,
          "incomplete" = n.y,
-         "current" = n) %>%
+         "scheduled" = n) %>%
   mutate(complete = as.integer(complete),
          incomplete = as.integer(incomplete),
-         current = as.integer(current))
+         scheduled = as.integer(scheduled))
 
 # Add back refuges that have no activity data and mark them as "Unknown"
-refuges <- data.frame("StationName" = levels(tbl$StationName))
+refuges <- data.frame("StationName" = levels(dat_activity$StationName))
 
-tbl <- merge(tbl, refuges, by = "StationName", all.y = T) %>%
+dat_activity <- merge(dat_activity, refuges, by = "StationName", all.y = T) %>%
   # Add a TOTAL row
   bind_rows(summarise(.,
                       across(where(is.numeric), sum, na.rm = T),
                       across(where(is.factor), ~"TOTAL"))) %>%
   # Add a reported row (reporting rate)
   rowwise() %>%
-  mutate(reported = sum(complete, incomplete, na.rm = T) / current,
+  mutate(reported = sum(complete, incomplete, na.rm = T) / scheduled,
          reported = scales::label_percent()(reported),
          complete = replace(complete, is.na(complete), "--"),
          incomplete = replace(incomplete, is.na(incomplete), "--")) %>%
   # Reorder the columns
-  select(StationName, current, reported, complete, incomplete)
-
-# Create a formatted table
-tbl %>% kbl(col.names = c("Refuge", "Current surveys", "Reporting rate", "Completed surveys", "Not completed surveys"),
-            longtable = T, 
-            caption = paste("Summary of survey activity at National Wildlife Refuges in the", region, "Region in 2021. Surveys are considered completed if data are collected for 75\\% or more of the scheduled sample sites in the given calendar year. Reporting rate indicates the percentage of current surveys at a refuge that had been reported as completed or not completed in PRIMR."),
-            booktabs = T) %>%
-  kable_styling(latex_options = c("striped", 
-                                  "HOLD_position",
-                                  "repeat_header"),
-                position = "left")
+  select(StationName, scheduled, reported, complete, incomplete)
 ```
 
-  
-```{r tbl_reasons, echo=F, message=F}
+```{r reasons, echo=F, message=F}
 covid_comments <- sum(str_count(dat$comment, "(?i)covid"), na.rm=T)  # (?i) = ignore case sensitivity
 
-dat %>%
+# incomplete <- dat %>% 
+#   count(isSurveyConducted) %>% 
+#   filter(isSurveyConducted == "false") %>% 
+#   pull(n)
+  
+dat_reasons <- dat %>%
   filter(isSurveyConducted == "false") %>%
-  group_by(reason) %>%
-  tally() %>%
-  arrange(-n) %>%
-  kbl(col.names = c("Reason", "n"),      
-      longtable = T, 
-      caption = paste0("Summary of reasons for why surveys were not completed at National Wildlife Refuges in the", region, " Region in ", year_selected, ". ", "COVID-related restrictions were described as the primary reason that surveys were not completed under the Administrative and Weather and Disturbance categories, preventing a total of ", covid_comments, " surveys from being completed."),
-      booktabs = T) %>%
-  kable_styling(latex_options = c("striped", 
-                                  "HOLD_position",
-                                  "repeat_header"),
-                position = "left")
+  count(reason, sort = T) %>%
+  mutate(n = paste0(as.character(n), " (", scales::label_percent(accuracy = 1)(n/sum(incomplete$n)), ")"))
 ```
 
-  
-```{r tbl_biotic_grp1, echo=F, message=F}
+```{r bio-grp1, echo=F, message=F}
 
 # Unnest derivedBioticGroupLevel1
 derived <- dat %>%
   unnest(derivedBioticGroupLevel1, keep_empty = TRUE) %>%
-  filter(isSurveyConducted == "true") %>%
-  select(StationName, SurveyName, scientificName, commonName)
+  select(StationName, SurveyName, isSurveyConducted, scientificName, commonName)
 
 # Unnest bioticGroupLevel1
 bio_grps <- dat %>%
   unnest(bioticGroupLevel1, keep_empty = TRUE) %>%
-  filter(isSurveyConducted == "true") %>%
-  select(StationName, SurveyName, scientificName, commonName)
+  select(StationName, SurveyName, isSurveyConducted, scientificName, commonName)
 
 # Combine them and keep distinct values, remove NAs
 bio1 <- rbind(derived, bio_grps)
@@ -162,45 +181,22 @@ bio1 <- bio1 %>%
   distinct()
 
 bio1 <- bio1 %>%
-  group_by(scientificName, commonName) %>%
-  tally() %>%
-  ungroup() %>%
+  count(isSurveyConducted, scientificName, commonName) %>%
   mutate(commonName = tolower(commonName),
          bio_grp = paste(scientificName, " (", commonName, ")", sep = ""),
          bio_grp = replace(bio_grp, bio_grp == "NA (NA)", "Unknown")) %>%
-  select(c(bio_grp, n)) %>%
-  arrange(-n)
-
-kbl(bio1,
-    longtable = T,
-    col.names = c("Biotic group (Level 1)", "n"),
-    caption = paste("Summary of biotic groups (Level 1) that were targeted or influenced by surveys completed at National Wildlife Refuges in the", region, "Region in 2021. Level 1 is a high level taxonomic category ranging from Class to Kingdom. Unknown values indicate surveys without a biotic group (Level 1) specified in PRIMR."),
-    booktabs = T) %>%
-  kable_styling(latex_options = c("striped", 
-                                  "HOLD_position",
-                                  "repeat_header"),
-                position = "left")
-```
-
-
-```{r plot_bio_grp1, echo=F, message=F, fig.cap=paste("Summary of biotic groups (Level 1) that were targeted or influenced by surveys completed at National Wildlife Refuges in the", region, "Region in 2021. Level 1 is a high level taxonomic category ranging from Class to Kingdom.")}
-
-bio1 %>%
-  # filter and reorder the data
+  rename(Completed = isSurveyConducted) %>%
+  mutate(Completed = ifelse(Completed == "true", "Yes", "No"),
+         Completed = replace_na(Completed, "Unknown")) %>%
+  select(c(Completed, bio_grp, n)) %>%
+  arrange(-n) %>%  # filter and reorder the data
   filter(bio_grp != "Unknown") %>%
+  filter(Completed != "Unknown" | n > 2) %>%
   arrange(-n) %>%
-  mutate(bio_grp = factor(bio_grp, levels = bio_grp)) %>%  # This trick updates the factor level order
-  # plot it
-  ggplot(aes(x = bio_grp, y = n)) +
-  geom_bar(stat = "identity", fill = "steelblue") +
-  geom_text(aes(label = n), vjust = -1.5, color = "black", size = 2.5) +
-  theme_minimal() +
-  xlab("Biotic groups (Level 1)") +
-  scale_x_discrete(labels = function(x) str_wrap(x, width = 10))
+  mutate(bio_grp = factor(bio_grp, levels = unique(bio_grp)))  # This trick updates the factor level order
 ```
 
-  
-```{r tbl_biotic_grp2, echo=F, message=F, fig.align='left'}
+```{r biotic-grp2, echo=F, message=F}
 
 ## Biotic group, level 2
   # Unnest derivedBioticGroupLevel2
@@ -221,19 +217,68 @@ bio2 <- bio2 %>%
   distinct()
 
 bio2 <- bio2 %>%
-  group_by(scientificName, commonName) %>%
-  tally() %>%
-  ungroup() %>%
+  count(scientificName, commonName) %>%
   mutate(commonName = tolower(commonName),
          bio_grp = paste(scientificName, " (", commonName, ")", sep = ""),
          bio_grp = replace(bio_grp, bio_grp == "NA (NA)", "Unknown")) %>%
+  filter(bio_grp != "Unknown") %>%
   select(c(bio_grp, n)) %>%
   arrange(-n)
 
-kbl(bio2, 
+```
+  
+```{r species, echo=F, message=F}
+
+## Biotic group, level 2
+  # Unnest derivedBioticGroupLevel2
+listed <- dat %>%
+  unnest(listedSpecies, keep_empty = TRUE, names_repair = "universal") %>%
+  filter(isSurveyConducted == "true") %>%
+  select(StationName, SurveyName, scientificName, commonName)
+
+# Unnest bioticGroupLevel2
+nonlisted <- dat %>%
+  unnest(nonListedSpecies, keep_empty = TRUE, names_repair = "universal") %>%
+  filter(isSurveyConducted == "true") %>%
+  select(StationName, SurveyName, scientificName, commonName)
+
+# Combine them and keep distinct values, remove NAs
+spp <- rbind(listed, nonlisted)
+spp <- spp %>%
+  distinct() %>%
+  filter(!is.na(scientificName))
+
+spp <- spp %>%
+  count(scientificName, commonName) %>%
+  mutate(species = paste(scientificName, " (", commonName, ")", sep = "")) %>%
+  select(c(species, n)) %>%
+  arrange(-n)
+```
+
+# Results
+
+In `r year_selected`, refuges in the `r region` Region collected data on `r sum(completed$n)` surveys of `r sum(scheduled$n)` scheduled surveys (`r scales::label_percent()(sum(completed$n) / sum(incomplete$n))`) (Table \@ref(tab:tbl-activity)). The most commonly reported reason for why data were not collected for `r sum(incomplete$n)` surveys was `r tolower(dat_reasons$reason[1])` [`r dat_reasons$n[1]`] challenges, followed by issues associated with a `r tolower(dat_reasons$reason[2])` [`r dat_reasons$n[2]`] (Table \@ref(tab:tbl-reasons)). Based on the comments associated with the reasons listed, COVID-19 restrictions prevented staff from collecting data on `r covid_comments` scheduled surveys.
+
+In `r year_selected`, refuge scientists collected survey data on a variety of biotic groups and species. The most surveyed biotic group (n = `r bio1$n[[1]]`) was `r as.character(bio1$bio_grp[[1]])` (Figure \@ref(fig:plot-bio-grp1)). The most surveyed biotic level 2 group (n = `r bio2$n[[1]]`) was `r as.character(bio2$bio_grp[[1]])` (Table 3). The most surveyed species (n = `r spp$n[[1]]`) was `r as.character(spp$species[[1]])` (Table 4).
+
+```{r tbl-activity, echo=F, message=F}
+
+# Create a formatted table
+dat_activity %>% kbl(col.names = c("Refuge", "Scheduled surveys", "Percent response", "Data collected", "Data not collected"),
+            caption = paste0("Summary of survey activity at National Wildlife Refuges in the ", region, " Region in ", year_selected, ". Surveys are considered completed if data are collected for 75\\% or more of the scheduled sample sites in the given calendar year. Reporting rate indicates the percentage of scheduled surveys at a refuge that were reported as either completed or not completed in PRIMR."),
+            booktabs = T) %>%
+  kable_styling(latex_options = c("striped", 
+                                  "HOLD_position"),
+                position = "left")
+```
+
+  
+```{r tbl-reasons, echo=F, message=F}
+
+kbl(dat_reasons, 
+    col.names = c("Reason", "n"),      
     longtable = T, 
-    col.names = c("Biotic group (Level 2)", "n"),
-    caption = paste("Summary of biotic groups (Level 2) that were targeted or influenced by surveys completed at National Wildlife Refuges in the", region, "Region in 2021. Level 2 is a mid-level taxonomic category ranging from Family to Order. Unknown values indicate surveys without a biotic group (Level 2) specified in PRIMR."),
+    caption = paste0("Summary of reasons for why data were not collected during surveys at National Wildlife Refuges in the ", region, " Region in ", year_selected, ". ", "In the comments, COVID-related restrictions were often described as a reason that surveys were not completed under the Administrative and Weather and Disturbance categories, preventing a total of ", covid_comments, " surveys from being completed."),
     booktabs = T) %>%
   kable_styling(latex_options = c("striped", 
                                   "HOLD_position",
@@ -242,9 +287,102 @@ kbl(bio2,
 ```
 
   
-```{r tbl_biotic_grp_combined, echo=F, message=F}
-## Biotic group, level 2
-  # Unnest derivedBioticGroupLevel2
+```{r tbl-biotic-grp1, echo=F, message=F}
+
+# Unnest derivedBioticGroupLevel1
+# derived <- dat %>%
+#   unnest(derivedBioticGroupLevel1, keep_empty = TRUE) %>%
+#   filter(isSurveyConducted == "true") %>%
+#   select(StationName, SurveyName, scientificName, commonName)
+# 
+# # Unnest bioticGroupLevel1
+# bio_grps <- dat %>%
+#   unnest(bioticGroupLevel1, keep_empty = TRUE) %>%
+#   filter(isSurveyConducted == "true") %>%
+#   select(StationName, SurveyName, scientificName, commonName)
+# 
+# # Combine them and keep distinct values, remove NAs
+# bio1 <- rbind(derived, bio_grps)
+# bio1 <- bio1 %>%
+#   distinct()
+# 
+# bio1 <- bio1 %>%
+#   count(scientificName, commonName) %>%
+#   mutate(commonName = tolower(commonName),
+#          bio_grp = paste(scientificName, " (", commonName, ")", sep = "")) %>%
+#          # bio_grp = replace(bio_grp, bio_grp == "NA (NA)", "Unknown")) %>%
+#   filter(bio_grp != "NA (NA)") %>%
+#   select(c(bio_grp, n)) %>%
+#   arrange(-n)
+# 
+# kbl(bio1,
+#     longtable = T,
+#     col.names = c("Biotic group (Level 1)", "n"),
+#     caption = paste0("Summary of biotic groups (Level 1) that were targeted or influenced by surveys completed at National Wildlife Refuges in the ", region, " Region in ", year_selected,". Level 1 is a high level taxonomic category ranging from Class to Kingdom. Not all surveys with data collected have listed a biotic group."),
+#     booktabs = T) %>%
+#   kable_styling(latex_options = c("striped", 
+#                                   "HOLD_position",
+#                                   "repeat_header"),
+#                 position = "left")
+```
+
+\newpage
+
+\blandscape
+
+```{r plot-bio-grp1, echo=F, message=F, fig.cap=paste0("Summary of biotic groups (Level 1) that were targeted or influenced by surveys completed at National Wildlife Refuges in the ", region, " Region in ", year_selected, ". Level 1 is a high level taxonomic category ranging from Class to Kingdom.")}
+
+bio1 %>%
+  ggplot(aes(x = bio_grp, y = n, fill = Completed)) +
+  geom_bar(stat = "identity", 
+           position = "stack") +
+  geom_text(aes(label = n), 
+            position = "stack", 
+            vjust = 1, 
+            color = "black", 
+            size = 2.5) +
+  theme_minimal() +
+  labs(fill = "Data collected?") + 
+  theme(legend.position = c(0.8, 0.8)) +
+  xlab("Biotic groups (Level 1)") +
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 10))
+```
+
+
+\elandscape
+
+\newpage
+
+```{r tbl-biotic-grp2, echo=F, message=F, fig.align='left'}
+kbl(bio2, 
+    longtable = T, 
+    col.names = c("Biotic group (Level 2)", "n"),
+    caption = paste0("Summary of biotic groups (Level 2) that were targeted or influenced by surveys completed at National Wildlife Refuges in the ", region, " Region in ", year_selected, ". Level 2 is a mid-level taxonomic category ranging from Family to Order. Unknown values indicate surveys without a biotic group (Level 2) specified in PRIMR."),
+    booktabs = T) %>%
+  kable_styling(latex_options = c("striped", 
+                                  "HOLD_position",
+                                  "repeat_header"),
+                position = "left")
+```
+
+\newpage
+
+```{r tbl-species, echo=F, message=F, fig.align='left'}
+kbl(spp, 
+    longtable = T, 
+    col.names = c("Species", "n"),
+    caption = paste0("Summary of species that were targeted or influenced by surveys completed at National Wildlife Refuges in the ", region, " Region in ", year_selected, "."),
+    booktabs = T) %>%
+  kable_styling(latex_options = c("striped", 
+                                  "HOLD_position",
+                                  "repeat_header"),
+                position = "left")
+```
+
+
+```{r tbl-biotic-grp-combined, echo=F, message=F}
+# Biotic group, level 2
+# Unnest derivedBioticGroupLevel2
 # derived <- dat %>%
 #   unnest(derivedBioticGroupLevel1, keep_empty = TRUE) %>%
 #   unnest(derivedBioticGroupLevel2, keep_empty = TRUE, names_repair = "unique") %>%
@@ -269,7 +407,9 @@ kbl(bio2,
 # # Combine them and keep distinct values, remove NAs
 # foo <- rbind(derived, bio_grps)
 # foo <- foo %>%
-#   distinct()
+#   distinct() %>%
+#   # filter(!is.na(scientificName1) & !is.na(scientificName2))
+#   filter_at(vars(scientificName1, scientificName2), any_vars(!is.na(.)))
 # 
 # foo <- foo %>%
 #   group_by(scientificName1, commonName1, scientificName2, commonName2) %>%
@@ -280,11 +420,11 @@ kbl(bio2,
 #          bio_grp = replace(bio_grp, bio_grp == "NA (NA)", "Unknown")) %>%
 #   select(c(bio_grp, n)) %>%
 #   arrange(-n)
-#   
+# 
 #   kbl(foo, longtable = T, col.names = c("Biotic group (Level 2)", "n"),
 #       caption = "Summary of biotic groups (Level 2) that were targeted or influenced by surveys completed at National Wildlife Refuges in the Alaska Region in 2021. Level 2 is a mid-level taxonomic category ranging from Family to Order. Unknown values indicate surveys without a biotic group (Level 2) specified in PRIMR.",
 #       booktabs = T) %>%
-#     kable_styling(latex_options = c("striped", 
+#     kable_styling(latex_options = c("striped",
 #                                     "hold_position",
 #                                     "repeat_header"),
 #                   position = "left")
@@ -293,11 +433,11 @@ kbl(bio2,
 
 \newpage
 
-# Survey Conducted in the `r region` Region in `r year_selected`  
+# Surveys Conducted in the `r region` Region in `r year_selected`  
 
-The following lists refuge surveys that are scheduled in reported in PRIMR as completed in the `r region` region in `r year_selected` Surveys are considered completed if data are collected for 75% or more of the scheduled sample sites in the given calendar year. 
+The following lists refuge surveys in the `r region` region that were scheduled in `r year_selected` and reported in PRIMR as completed. Surveys are considered completed if data are collected for 75% or more of the scheduled sample sites in the given calendar year. 
 
-```{r refuge_summaries, echo=F, results='asis'}
+```{r refuge-summaries, echo=F, results='asis'}
 
 foo <- dat %>% 
   filter(isSurveyConducted == "true") %>%
@@ -315,7 +455,7 @@ for (i in (1:length(foo))) {
   cat("##", names(foo[i]), "\n")
   for(t in (1:length(foo[[i]]$SurveyName))) {
     cat("### ", "[", foo[[i]]$SurveyName[t], "](https://ecos.fws.gov/primr/survey/edit/", foo[[i]]$id[t], ")", " \n", sep = "")
-    cat("**Survey record:** https://ecos.fws.gov/primr/survey/edit/", foo[[i]]$id[t], "\n", sep = "")
+    cat("\n")
     cat("\n")
     cat("**Survey type:**", foo[[i]]$SurveyType[t], "\n")
     cat("\n")
@@ -325,14 +465,16 @@ for (i in (1:length(foo))) {
     cat("\n")
     if(foo[[i]]$ProtocolTitle[t] != "(No protocol)") {
       cat("**Protocol:** ", "[", foo[[i]]$ProtocolTitle[t], "](https://ecos.fws.gov/ServCat/Reference/Profile/", foo[[i]]$protocol.servCatId[t], ")", " \n", sep = "")
-      } else {
-        cat("**Protocol:** (No Protocol)", "\n")}
+    } else {
+      cat("**Protocol:** (No Protocol)", "\n")}
     cat("\n")
     cat("**Survey Coordinator:** ", foo[[i]]$coordinatorName[t], " (", foo[[i]]$coordinatorTitle[t], ")", "\n", sep = "")
     cat("\n")
     cat("**Email:**", foo[[i]]$coordinatorEmail[t], "\n")
     cat("\n")
     cat("**Why is it important to conduct this survey?**", foo[[i]]$answerQuestion2.text[t], "\n")
+    cat("\n")
+    cat("***")
     cat("\n")
   }
   cat("\n")
@@ -344,7 +486,7 @@ for (i in (1:length(foo))) {
 
 # R Session Info
 
-```{r session_info, results='asis', echo=F}
+```{r session-info, results='asis', echo=F}
 sessionInfo()
 ```
 
