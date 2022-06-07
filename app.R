@@ -17,7 +17,7 @@ library(kableExtra)
 
 ##----
 # Load the survey data locally
-load("./data/input_dat.Rdata")
+load("./data/input_dat.RData")
 
 
 #-----
@@ -30,10 +30,10 @@ ui <- function(request) {
                               fluidRow(
                                 column(2,
                                        fluidRow(
-                                         column(6,
-                                                img(src = "aim_logo_small.png", width = 90),
-                                         ),
-                                         column(6,
+                                         # column(6,
+                                         #        img(src = "aim_logo_small.png", width = 90),
+                                         # ),
+                                         column(12,
                                                 htmlOutput("dat_panel")  # Add a header
                                                 )
                                        ),
@@ -146,6 +146,7 @@ server <- function(input, output, session) {
     id = "my-filters",
     module = selectizeGroupServer,
     data = input_dat,
+    inline = FALSE,
     vars = c(
       "Zone",
       "StationName",
@@ -372,7 +373,7 @@ server <- function(input, output, session) {
 
         dat_conducted <- dat_conducted %>%
           group_by(SurveyName, StationName, FrequencyNum, startYear) %>%
-          expand(year = startYear:ifelse(endYear == "Indefinite" | endYear > as.numeric(format(Sys.Date(), "%Y")), as.numeric(format(Sys.Date(), "%Y")), as.numeric(endYear))) %>%
+          expand(year = dat_conducted$startYear:ifelse(endYear == "Indefinite" | endYear > as.numeric(format(Sys.Date(), "%Y")), as.numeric(format(Sys.Date(), "%Y")), as.numeric(endYear))) %>%
           ungroup() %>%
           left_join(dat_conducted) %>%
           select(SurveyName, StationName, FrequencyNum, startYear, year, isSurveyConducted, reason, comment) %>%

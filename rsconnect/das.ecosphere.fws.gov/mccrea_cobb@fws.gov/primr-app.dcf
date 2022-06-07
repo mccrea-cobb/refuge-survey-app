@@ -5,9 +5,10 @@ account: mccrea_cobb@fws.gov
 server: das.ecosphere.fws.gov
 hostUrl: https://das.ecosphere.fws.gov/__api__
 appId: 40
-bundleId: 421
+bundleId: 436
 url: https://das.ecosphere.fws.gov/content/40/
-when: 1646067775.01735
-lastSyncTime: 1646067775.01735
+when: 1654630801.60228
+lastSyncTime: 1654630801.60228
 asMultiple: FALSE
 asStatic: FALSE
+ignoredFiles: annual_report.log|annual_report.pdf|annual_report.Rmd|annual_report_ryan_review.pdf|feedback.docx|images/bear.jpg|images/Fwslogo.png|taxonomy.R|www/aim_logo_small.png
