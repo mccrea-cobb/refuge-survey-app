@@ -14,6 +14,7 @@ library(RColorBrewer)
 library(tidyr)
 library(iris)
 library(kableExtra)
+library(reactable)
 
 ##----
 # Load the survey data locally
@@ -43,7 +44,7 @@ ui <- function(request) {
                                        shinyWidgets::searchInput(inputId = "search",
                                                                  label = "Search survey titles:",
                                                                  btnSearch = icon("search"),
-                                                                 btnReset = icon("remove")
+                                                                 btnReset = icon("remove", verify_fa = FALSE)
                                        ),
 
                                        shinyWidgets::awesomeCheckboxGroup(inputId = "zone_select",
@@ -75,8 +76,8 @@ ui <- function(request) {
 
                                        hr(),
 
-                                       tags$h4("Download a summary report"),
-                                       downloadButton('downloadReport')
+                                       downloadButton('downloadReport',
+                                                      label = "Summary Report")
                                 ),
                                 column(10,
                                        tabsetPanel(
@@ -105,10 +106,20 @@ ui <- function(request) {
                                                   DT::DTOutput("tbl_protocol", height = 500)  # Show a summary table of protocols
                                          ),
                                          tabPanel("Annual Activity",
-
                                                   br(),
+                                                  numericInput(inputId = "year_report",
+                                                               label = "Year:",
+                                                               value = as.numeric(format(Sys.Date(), "%Y"))-1,
+                                                               min = 2016,
+                                                               max = as.integer(format(Sys.Date(), "%Y"))-1,
+                                                               step = 1,
+                                                               width = '75px'),
+                                                  downloadButton('downloadAnnualReport',
+                                                                 label = "Annual Activity Report"),
 
-                                                  DT::DTOutput("tbl_conducted", height = 500))  # Show a summary table of protocols
+                                                  hr(),
+                                                  reactableOutput("tbl_conducted2"))
+                                                  # DT::DTOutput("tbl_conducted", height = 500))  # Show a summary table of annual activity
                                        )
                                 )
                               )
@@ -187,7 +198,8 @@ server <- function(input, output, session) {
 
     } else
       dat_zone() %>%
-      filter(stringr::str_detect(tolower(SurveyName), search())) %>%
+      # filter(if_any(everything(), ~str_detect(tolower(.), search()))) %>%  # search all columns
+      filter(stringr::str_detect(tolower(SurveyName), search())) %>%  # search just the title
       arrange(StationName, SurveyName)
 
   })
@@ -304,8 +316,7 @@ server <- function(input, output, session) {
     }
 
     dat_survey_tbl <- dat_survey_tbl %>%
-      mutate(Products = paste0("<a href='", servCatUrl, "' target='_blank'>", as.character(icon("link", lib = "glyphicon")), "</a>")) %>%
-      mutate(Products = na_if(Products, "<a href='NA' target='_blank'>ServCat link</a>")) %>%
+      mutate(Products = ifelse(is.na(servCatUrl), NA, paste0("<a href='", servCatUrl, "' target='_blank'>", as.character(icon("link", lib = "glyphicon")), "</a>"))) %>%
       dplyr::select(StationName,
                     SurveyName,
                     Products,
@@ -455,11 +466,11 @@ server <- function(input, output, session) {
       paste(
         sep = "<br>",
         paste0("<center><h2><b>", selected()[["SurveyName"]], "</b></h2></center>"),
-        paste0("<center><h4><b>", selected()[["StationName"]], "</b></h4></center>"),
-        paste0("<b>Survey Coordinator: </b>", selected()[["coordinatorName"]], " (", selected()[["coordinatorTitle"]], ", ", selected()[["coordinatorEmail"]], ")"),
-        paste0("<b>Years: </b>", selected()[["startYear"]], "-", selected()[["endYear"]]),
-        paste0("<b>Products: </b>", selected()[["reports"]][[1]]$servCatUrl),
-        paste0("<b>Protocol: </br>", as.character(selected()[["ProtocolTitle"]]))
+        paste0("<center><h4><b>", selected()[["StationName"]], "</b></h4></center>", "<br>"),
+        paste0("<b>Survey Coordinator: </b>", selected()[["coordinatorName"]], ", ", selected()[["coordinatorTitle"]], " (", selected()[["coordinatorEmail"]], ")", "<br>"),
+        paste0("<b>Years: </b>", selected()[["startYear"]], "-", selected()[["endYear"]], "<br>"),
+        paste0("<b>Products: </b>", selected()[["reports"]][[1]]$servCatUrl, "<br>"),
+        paste0("<b>Protocol: </b>", as.character(selected()[["ProtocolTitle"]]))
         )
     )
   })
@@ -543,6 +554,37 @@ server <- function(input, output, session) {
     )
   })
 
+  dat_conducted <- reactive({
+    dat() %>%
+    unnest(Conducted)
+  })
+
+  data <- reactive({
+    unique(dat_conducted_tbl()[, c("StationName", "SurveyName")])
+  })
+
+  output$tbl_conducted2 <- renderReactable({
+    reactable(data(),
+              sortable = T,
+              filterable = T,
+              groupBy = "StationName",
+              columns = list(
+                StationName = colDef(name = "Refuge"),
+                SurveyName = colDef(name = "Survey")),
+              details = function(index) {
+                tbl_details <- dat_conducted_tbl()[dat_conducted_tbl()$SurveyName == dat_conducted_tbl()$SurveyName[index], ]
+                htmltools::div(style = "padding: 16px",
+                               reactable(tbl_details[, c("Year", "Conducted", "Reason", "Comment")],
+                                         # columns = list(
+                                         #   year = colDef(name = "Year"),
+                                         #   isSurveyConducted = colDef(name = "Conducted?"),
+                                         #   reason = colDef(name = "Reason"),
+                                         #   comment = colDef(name = "Comment")),
+                                         outlined = FALSE)
+                )
+              })
+  })
+
   # Create html code for the summary panel
   output$dat_panel <- renderUI({
     HTML(
@@ -556,7 +598,7 @@ server <- function(input, output, session) {
 
 
 
-  # Set up parameters to pass to Rmd report
+  # Set up parameters to pass to Summary Report
   params <- list(input_dat = input_dat,
                  dat = reactive(dat()),
                  zone = reactive(input$zone_select))
@@ -579,6 +621,38 @@ server <- function(input, output, session) {
                                html_document(),
                                params = params
                                # envir = new.env(parent = globalenv())
+      )
+      file.rename(out, file)
+    }
+  )
+
+  # Set up parameters to pass to Annual Report
+  params_annual <- list(
+    year = isolate(input$year_report))
+
+  # Download rmarkdown annual report
+  output$downloadAnnualReport <- downloadHandler(
+    filename = "annual-report.pdf",
+
+    content = function(file) {
+      src_rmd <- normalizePath('annual_report.Rmd')
+      src_latex <- normalizePath("latex")
+      src_images <- normalizePath("images")
+
+
+      # Temporarily switch to the temp dir, in case you do not have write
+      # permission to the current working directory
+      owd <- setwd(tempdir())
+      on.exit(setwd(owd))
+      file.copy(src_rmd, 'annual_report.Rmd', overwrite = TRUE)
+      R.utils::copyDirectory(src_latex, "latex")
+      R.utils::copyDirectory(src_images, "images")
+
+      library(rmarkdown)
+      library(bookdown)
+      out <- rmarkdown::render('annual_report.Rmd',
+                        params = params_annual
+                        # envir = new.env(parent = globalenv())
       )
       file.rename(out, file)
     }

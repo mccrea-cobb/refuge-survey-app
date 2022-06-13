@@ -4,6 +4,11 @@ title:  |
     |
     |
     | ![](images/bear.jpg){width=7in}
+header-includes:
+  \usepackage{float}
+  \usepackage{booktabs}
+  \usepackage{colortbl}
+
 output:
   bookdown::pdf_document2:
     latex_engine: xelatex
@@ -15,6 +20,8 @@ output:
     toc: yes
     toc_depth: 2
 urlcolor: blue
+params:
+  year: 2021
 ---
 
 \newpage
@@ -31,14 +38,21 @@ library(kableExtra)
 
 ```{r import-format, echo=F, warning=F, message=F}
 
-source("R/global.R")
-
+regions <- data.frame("region_number" = c(1:8),
+                      "region_name" = c("Pacific",
+                                        "Southwest",
+                                        "Midwest",
+                                        "Southeast",
+                                        "Northeast",
+                                        "Mountain-Prairie",
+                                        "Alaska",
+                                        "Pacific Southwest"))
 region_num <- 7 
-year_selected <- 2021
 region <- regions$region_name[[region_num]]
+year_selected <- params$year
 
 # Load the survey data 
-load("./data/input_dat.Rdata")
+# load("./data/input_dat.Rdata")
 # input_dat <- primr_dat_ws(region_num)
 # save(input_dat, file = "./data/input_dat.Rdata")
 
@@ -103,7 +117,9 @@ Refuge scientists are requested by the Refuge Inventory and Monitoring Program t
 -  **Administrative**: data could not be collected due to a change of priorities, lack of permissions/permits, or change in protective status of survey area that prevented access to sampling sites
 - **Partner resources**: data not collected because partner could not provide intended resources (funds, personnel time or equipment). 
 
-Based on the annual update reporting provided by refuge staff and the information associated with refuge records in PRIMR, we summarized scheduled surveys in `r `year_selected`. This included which surveys did and did not have data collected, by refuge; what reasons prevented data collection, and the biotic groups and species on which data was collected. Finally, the report provides a list of surveys with summary information, by refuge, that on which data were collected.  
+Based on the annual update reporting provided by refuge staff and the information associated with refuge records in PRIMR, this report summarizes scheduled surveys in `r year_selected`. Summary information includes what surveys did and did not have data collected, by refuge; what reasons prevented data collection, and the biotic groups and species on which data was collected. Finally, the report provides summary information for `r year_selected` scheduled surveys, including links to products and protocols, for which data were collected.
+
+This report was created in [Rmarkdown](https://rmarkdown.rstudio.com/) using [this code](https://github.com/mccrea-cobb/refuge-survey-app/blob/master/annual_report.Rmd).
 
 ```{r activity, echo=F, message=F}
 
@@ -268,8 +284,8 @@ In `r year_selected`, refuge scientists collected survey data on a variety of bi
 
 ## Create a formatted table of survey activity
 
-dat_activity %>% kbl(col.names = c("Refuge", "Scheduled surveys", "Percent response", "Data collected", "Data not collected"),
-            caption = paste0("Summary of survey activity at National Wildlife Refuges in the ", region, " Region in ", year_selected, ". Surveys are considered completed if data are collected for 75\\% or more of the scheduled sample sites in the given calendar year. Reporting rate indicates the percentage of scheduled surveys at a refuge that were reported as either completed or not completed in PRIMR."),
+dat_activity %>% kbl(col.names = c("Refuge", "Scheduled surveys", "Response rate", "Data collected", "Data not collected"),
+            caption = paste0("Summary of survey activity at National Wildlife Refuges in the ", region, " Region in ", year_selected, ". Surveys are considered completed if data are collected for 75\\% or more of the scheduled sample sites in the given calendar year. Response rate indicates the percentage of scheduled surveys at a refuge that were reported as either completed or not completed in PRIMR."),
             booktabs = T) %>%
   kable_styling(latex_options = c("striped", 
                                   "HOLD_position"),
@@ -468,7 +484,7 @@ spp %>%
 
 # Surveys Conducted in the `r region` Region in `r year_selected`  
 
-The following lists refuge surveys in the `r region` region that were scheduled in `r year_selected` and reported in PRIMR as completed. Surveys are considered completed if data are collected for 75% or more of the scheduled sample sites in the given calendar year. 
+The following lists refuge surveys in the `r region` region that were scheduled in `r year_selected` and reported in PRIMR as completed. Surveys are considered completed if data are collected for 75% or more of the scheduled sample sites in the given calendar year. Refuges not listed below did not report any data collection in `r year_selected`.
 
 ```{r refuge-summaries, echo=F, results='asis'}
 
@@ -503,7 +519,7 @@ for (i in (1:length(foo))) {
   cat("##", names(foo[i]), "\n")
   
   if(is.na(dat_reasons_by_refuge[[i]]$reason[1])) {
-    cat("No surveys were reported as not being completed. \n")
+    cat("The Refuge did not report any scheduled surveys that were not completed. \n")
   } else {
   cat("Data were not collected for ", sum(dat_reasons_by_refuge[[i]]$n, na.rm = T), "surveys.")
   cat("\n")
