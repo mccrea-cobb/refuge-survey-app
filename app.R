@@ -15,6 +15,8 @@ library(tidyr)
 library(iris)
 library(kableExtra)
 library(reactable)
+library(bookdown)
+library(shinycssloaders)  # Adds a spinner progress image when tables are loading
 
 ##----
 # Load the survey data locally
@@ -118,7 +120,7 @@ ui <- function(request) {
                                                                  label = "Annual Activity Report"),
 
                                                   hr(),
-                                                  reactableOutput("tbl_conducted2"))
+                                                  shinycssloaders::withSpinner(reactableOutput("tbl_conducted2")))
                                                   # DT::DTOutput("tbl_conducted", height = 500))  # Show a summary table of annual activity
                                        )
                                 )
@@ -648,12 +650,12 @@ server <- function(input, output, session) {
       R.utils::copyDirectory(src_latex, "latex")
       R.utils::copyDirectory(src_images, "images")
 
-      library(rmarkdown)
-      library(bookdown)
-      out <- rmarkdown::render('annual_report.Rmd',
-                        params = params_annual
-                        # envir = new.env(parent = globalenv())
-      )
+      withProgress(message = "This takes a minute or two", detail = "Your report is rendering...", {
+        out <- rmarkdown::render('annual_report.Rmd',
+                                 params = params_annual
+                                 # envir = new.env(parent = globalenv())
+        )
+      })
       file.rename(out, file)
     }
   )
